@@ -7,12 +7,12 @@ Python.
 ## Requirements
 
 - **Python 3.10+**
-- `fastapi`, `sqlalchemy`, `uvicorn`, `streamlit`
+- `fastapi`, `sqlalchemy`, `uvicorn`, `streamlit`, `requests`
 
 Install the dependencies with:
 
 ```bash
-python3 -m pip install fastapi sqlalchemy uvicorn streamlit
+pip install -r requirements.txt
 ```
 
 ## Running the backend
