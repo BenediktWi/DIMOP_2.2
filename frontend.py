@@ -1,7 +1,8 @@
+import os
 import streamlit as st
 import requests
 
-BACKEND_URL = st.secrets.get("BACKEND_URL", "http://localhost:8000")
+BACKEND_URL = os.getenv("BACKEND_URL", st.secrets.get("BACKEND_URL", "http://localhost:8000"))
 
 # TODO: add Streamlit-based login and store the returned token
 # auth_token = st.session_state.get("token")
