@@ -21,7 +21,7 @@ Start the API server with Uvicorn. The database `app.db` will be created
 automatically in the repository root.
 
 ```bash
-uvicorn backend:app --reload
+python -m uvicorn backend:app --reload
 ```
 
 ## Starting the Streamlit frontend
