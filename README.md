@@ -7,13 +7,13 @@ frontend is a command line interface built with **Typer**.
 ## Requirements
 
 - Python 3.10+
-- `fastapi`, `sqlalchemy`, `uvicorn`, `requests`, `typer`
+- `fastapi`, `sqlalchemy`, `uvicorn`, `requests`, `typer`, `streamlit`
 
 You can install the dependencies with:
 
 ```bash
 python3 -m pip install fastapi==0.110.0 sqlalchemy==2.0.29 \
-    uvicorn==0.29.0 requests==2.31.0 typer==0.12.3
+    uvicorn==0.29.0 requests==2.31.0 typer==0.12.3 streamlit==1.34.0
 ```
 
 ## Running the backend
@@ -46,4 +46,16 @@ python frontend.py list-components
 ```
 
 Run `python frontend.py --help` to see all available commands.
+
+## Running the Streamlit app
+
+The repository also provides a small GUI built with Streamlit. With the backend
+running, launch the interface with:
+
+```bash
+streamlit run app.py
+```
+
+This will open a browser window where you can add, update and delete materials
+and components using the FastAPI endpoints.
 

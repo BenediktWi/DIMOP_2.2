@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy import ForeignKey, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker, Session
@@ -89,6 +89,26 @@ def create_material(material: MaterialCreate, db: Session = Depends(get_db)):
 def read_materials(db: Session = Depends(get_db)):
     return db.query(Material).all()
 
+@app.put("/materials/{material_id}", response_model=MaterialRead)
+def update_material(material_id: int, material: MaterialCreate, db: Session = Depends(get_db)):
+    db_obj = db.get(Material, material_id)
+    if not db_obj:
+        raise HTTPException(status_code=404, detail="Material not found")
+    for field, value in material.dict().items():
+        setattr(db_obj, field, value)
+    db.commit()
+    db.refresh(db_obj)
+    return db_obj
+
+@app.delete("/materials/{material_id}", status_code=204)
+def delete_material(material_id: int, db: Session = Depends(get_db)):
+    db_obj = db.get(Material, material_id)
+    if not db_obj:
+        raise HTTPException(status_code=404, detail="Material not found")
+    db.delete(db_obj)
+    db.commit()
+    return Response(status_code=204)
+
 @app.post("/components/", response_model=ComponentRead)
 def create_component(component: ComponentCreate, db: Session = Depends(get_db)):
     db_obj = Component(**component.dict())
@@ -100,4 +120,24 @@ def create_component(component: ComponentCreate, db: Session = Depends(get_db)):
 @app.get("/components/", response_model=List[ComponentRead])
 def read_components(db: Session = Depends(get_db)):
     return db.query(Component).all()
+
+@app.put("/components/{component_id}", response_model=ComponentRead)
+def update_component(component_id: int, component: ComponentCreate, db: Session = Depends(get_db)):
+    db_obj = db.get(Component, component_id)
+    if not db_obj:
+        raise HTTPException(status_code=404, detail="Component not found")
+    for field, value in component.dict().items():
+        setattr(db_obj, field, value)
+    db.commit()
+    db.refresh(db_obj)
+    return db_obj
+
+@app.delete("/components/{component_id}", status_code=204)
+def delete_component(component_id: int, db: Session = Depends(get_db)):
+    db_obj = db.get(Component, component_id)
+    if not db_obj:
+        raise HTTPException(status_code=404, detail="Component not found")
+    db.delete(db_obj)
+    db.commit()
+    return Response(status_code=204)
 
