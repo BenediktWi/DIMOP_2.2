@@ -42,6 +42,10 @@ class MaterialCreate(BaseModel):
     Name: str
     GWP: int
 
+class MaterialUpdate(BaseModel):
+    Name: str
+    GWP: int
+
 class MaterialRead(MaterialCreate):
     Material_ID: int
 
@@ -49,6 +53,16 @@ class MaterialRead(MaterialCreate):
         orm_mode = True
 
 class ComponentCreate(BaseModel):
+    Name: str
+    Ebene: int
+    Parent_ID: Optional[int] = None
+    Atomar: bool
+    Gewicht: int
+    Komponente_Wiederverwendbar: bool
+    Verbindungstyp: str
+    Material_ID: int
+
+class ComponentUpdate(BaseModel):
     Name: str
     Ebene: int
     Parent_ID: Optional[int] = None
@@ -89,6 +103,28 @@ def create_material(material: MaterialCreate, db: Session = Depends(get_db)):
 def read_materials(db: Session = Depends(get_db)):
     return db.query(Material).all()
 
+@app.put("/materials/{material_id}", response_model=MaterialRead)
+def update_material(
+    material_id: int, material: MaterialUpdate, db: Session = Depends(get_db)
+):
+    db_obj = db.get(Material, material_id)
+    if db_obj is None:
+        raise HTTPException(status_code=404)
+    for key, value in material.dict().items():
+        setattr(db_obj, key, value)
+    db.commit()
+    db.refresh(db_obj)
+    return db_obj
+
+@app.delete("/materials/{material_id}", status_code=204)
+def delete_material(material_id: int, db: Session = Depends(get_db)):
+    db_obj = db.get(Material, material_id)
+    if db_obj is None:
+        raise HTTPException(status_code=404)
+    db.delete(db_obj)
+    db.commit()
+    return None
+
 @app.post("/components/", response_model=ComponentRead)
 def create_component(component: ComponentCreate, db: Session = Depends(get_db)):
     db_obj = Component(**component.dict())
@@ -100,4 +136,26 @@ def create_component(component: ComponentCreate, db: Session = Depends(get_db)):
 @app.get("/components/", response_model=List[ComponentRead])
 def read_components(db: Session = Depends(get_db)):
     return db.query(Component).all()
+
+@app.put("/components/{component_id}", response_model=ComponentRead)
+def update_component(
+    component_id: int, component: ComponentUpdate, db: Session = Depends(get_db)
+):
+    db_obj = db.get(Component, component_id)
+    if db_obj is None:
+        raise HTTPException(status_code=404)
+    for key, value in component.dict().items():
+        setattr(db_obj, key, value)
+    db.commit()
+    db.refresh(db_obj)
+    return db_obj
+
+@app.delete("/components/{component_id}", status_code=204)
+def delete_component(component_id: int, db: Session = Depends(get_db)):
+    db_obj = db.get(Component, component_id)
+    if db_obj is None:
+        raise HTTPException(status_code=404)
+    db.delete(db_obj)
+    db.commit()
+    return None
 
