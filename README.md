@@ -7,12 +7,12 @@ Python.
 ## Requirements
 
 - **Python 3.10+**
-- `fastapi`, `sqlalchemy`, `uvicorn`, `streamlit`
+- `fastapi`, `sqlalchemy`, `uvicorn`, `streamlit`, `requests`
 
 Install the dependencies with:
 
 ```bash
-python3 -m pip install fastapi sqlalchemy uvicorn streamlit
+pip install -r requirements.txt
 ```
 
 ## Running the backend
@@ -31,6 +31,23 @@ Launch the web interface once the backend is running:
 ```bash
 streamlit run frontend.py
 ```
+
+The Streamlit app looks for the API at `http://localhost:8000` by default. If
+your backend is running at a different address you can override the URL in two
+ways:
+
+1. Create a `.streamlit/secrets.toml` file in the project root containing:
+
+   ```toml
+   BACKEND_URL = "http://localhost:8000"
+   ```
+
+2. Or set the environment variable before launching Streamlit:
+
+   ```bash
+   export BACKEND_URL="http://localhost:8000"
+   streamlit run frontend.py
+   ```
 
 ## Packaging with PyInstaller
 

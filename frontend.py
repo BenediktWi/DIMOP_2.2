@@ -1,37 +1,36 @@
+import os
 import streamlit as st
 from streamlit.errors import StreamlitAPIException
 import requests
-import os
+
+# Fallback-Logik für BACKEND_URL: zuerst st.secrets, sonst ENV, sonst Default
 try:
     BACKEND_URL = st.secrets["BACKEND_URL"]
 except (FileNotFoundError, KeyError, StreamlitAPIException):
-    BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")
+    BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
     st.warning(
-        "Using fallback BACKEND_URL. Set st.secrets['BACKEND_URL'] or env variable."
+        "Using fallback BACKEND_URL. Set st.secrets['BACKEND_URL'] or the BACKEND_URL env var."
     )
 
-# TODO: add Streamlit-based login and store the returned token
+# TODO: add Streamlit-based login und Token-Handling
 # auth_token = st.session_state.get("token")
 # AUTH_HEADERS = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
 
-
 def get_materials():
     try:
-        r = requests.get(f"{BACKEND_URL}/materials")  # TODO: pass AUTH_HEADERS
+        r = requests.get(f"{BACKEND_URL}/materials")  # später mit AUTH_HEADERS
         r.raise_for_status()
         return r.json()
     except Exception:
         return []
-
 
 def get_components():
     try:
-        r = requests.get(f"{BACKEND_URL}/components")  # TODO: pass AUTH_HEADERS
+        r = requests.get(f"{BACKEND_URL}/components")  # später mit AUTH_HEADERS
         r.raise_for_status()
         return r.json()
     except Exception:
         return []
-
 
 st.title("DIMOP 2.2")
 page = st.sidebar.selectbox("Page", ["Materials", "Components"])
@@ -145,4 +144,3 @@ elif page == "Components":
                 # TODO: pass AUTH_HEADERS once login is implemented
             )
             st.experimental_rerun()
-
