@@ -12,8 +12,7 @@ frontend is a command line interface built with **Typer**.
 You can install the dependencies with:
 
 ```bash
-python3 -m pip install fastapi==0.110.0 sqlalchemy==2.0.29 \
-    uvicorn==0.29.0 requests==2.31.0 typer==0.12.3
+python3 -m pip install -r requirements.txt
 ```
 
 ## Running the backend
