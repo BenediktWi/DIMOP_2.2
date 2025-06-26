@@ -3,14 +3,12 @@ import streamlit as st
 from streamlit.errors import StreamlitAPIException
 import requests
 
-# Fallback-Logik für BACKEND_URL: zuerst st.secrets, sonst ENV, sonst Default
+# Fallback-Logik für BACKEND_URL: zuerst st.secrets, dann ENV, sonst Default
+DEFAULT_BACKEND_URL = "http://localhost:8000"
 try:
     BACKEND_URL = st.secrets["BACKEND_URL"]
 except (FileNotFoundError, KeyError, StreamlitAPIException):
-    BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
-    st.warning(
-        "Using fallback BACKEND_URL. Set st.secrets['BACKEND_URL'] or the BACKEND_URL env var."
-    )
+    BACKEND_URL = os.getenv("BACKEND_URL", DEFAULT_BACKEND_URL)
 
 # TODO: add Streamlit-based login und Token-Handling
 # auth_token = st.session_state.get("token")
