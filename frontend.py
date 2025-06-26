@@ -3,10 +3,14 @@ import requests
 
 BACKEND_URL = st.secrets.get("BACKEND_URL", "http://localhost:8000")
 
+# TODO: add Streamlit-based login and store the returned token
+# auth_token = st.session_state.get("token")
+# AUTH_HEADERS = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
+
 
 def get_materials():
     try:
-        r = requests.get(f"{BACKEND_URL}/materials")
+        r = requests.get(f"{BACKEND_URL}/materials")  # TODO: pass AUTH_HEADERS
         r.raise_for_status()
         return r.json()
     except Exception:
@@ -15,7 +19,7 @@ def get_materials():
 
 def get_components():
     try:
-        r = requests.get(f"{BACKEND_URL}/components")
+        r = requests.get(f"{BACKEND_URL}/components")  # TODO: pass AUTH_HEADERS
         r.raise_for_status()
         return r.json()
     except Exception:
@@ -35,6 +39,7 @@ if page == "Materials":
             res = requests.post(
                 f"{BACKEND_URL}/materials",
                 json={"name": name, "description": description},
+                # TODO: pass AUTH_HEADERS once login is implemented
             )
             if res.ok:
                 st.success("Material created")
@@ -55,6 +60,7 @@ if page == "Materials":
                 res = requests.put(
                     f"{BACKEND_URL}/materials/{mat['id']}",
                     json={"name": up_name, "description": up_desc},
+                    # TODO: pass AUTH_HEADERS once login is implemented
                 )
                 if res.ok:
                     st.success("Material updated")
@@ -68,7 +74,10 @@ if page == "Materials":
         col1, col2 = st.columns([4, 1])
         col1.write(f"{m['name']} ({m['id']}) - {m.get('description', '')}")
         if col2.button("Delete", key=f"del_mat_{m['id']}"):
-            requests.delete(f"{BACKEND_URL}/materials/{m['id']}")
+            requests.delete(
+                f"{BACKEND_URL}/materials/{m['id']}"
+                # TODO: pass AUTH_HEADERS once login is implemented
+            )
             st.experimental_rerun()
 
 elif page == "Components":
@@ -84,6 +93,7 @@ elif page == "Components":
             res = requests.post(
                 f"{BACKEND_URL}/components",
                 json={"name": name, "material_id": mat_dict[mat_name]},
+                # TODO: pass AUTH_HEADERS once login is implemented
             )
             if res.ok:
                 st.success("Component created")
@@ -108,6 +118,7 @@ elif page == "Components":
                 res = requests.put(
                     f"{BACKEND_URL}/components/{comp['id']}",
                     json={"name": up_name, "material_id": mat_dict.get(up_mat)},
+                    # TODO: pass AUTH_HEADERS once login is implemented
                 )
                 if res.ok:
                     st.success("Component updated")
@@ -122,6 +133,9 @@ elif page == "Components":
         col1, col2 = st.columns([4, 1])
         col1.write(f"{c['name']} ({c['id']}) - Material: {mat_name}")
         if col2.button("Delete", key=f"del_comp_{c['id']}"):
-            requests.delete(f"{BACKEND_URL}/components/{c['id']}")
+            requests.delete(
+                f"{BACKEND_URL}/components/{c['id']}"
+                # TODO: pass AUTH_HEADERS once login is implemented
+            )
             st.experimental_rerun()
 
