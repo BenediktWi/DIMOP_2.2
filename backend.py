@@ -1,5 +1,8 @@
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException, Depends
+# TODO: configure OAuth2PasswordBearer and related utilities for authentication
+# from fastapi.security import OAuth2PasswordBearer
+# oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, String, ForeignKey
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker, Session
@@ -81,6 +84,11 @@ def get_db():
     finally:
         db.close()
 
+# TODO: implement `get_current_user` using the OAuth2 scheme above
+# def get_current_user(token: str = Depends(oauth2_scheme)):
+#     """Validate the token and return the current user."""
+#     pass
+
 
 app = FastAPI()
 
@@ -91,6 +99,7 @@ def on_startup():
 
 
 # Material routes
+# TODO: use Depends(get_current_user) in each route to require authentication
 @app.post("/materials", response_model=MaterialRead)
 def create_material(material: MaterialCreate, db: Session = Depends(get_db)):
     db_material = Material(**material.dict())
@@ -138,6 +147,7 @@ def delete_material(material_id: int, db: Session = Depends(get_db)):
 
 
 # Component routes
+# TODO: secure these routes with Depends(get_current_user)
 @app.post("/components", response_model=ComponentRead)
 def create_component(component: ComponentCreate, db: Session = Depends(get_db)):
     if not db.get(Material, component.material_id):

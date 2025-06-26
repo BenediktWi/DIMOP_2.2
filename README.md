@@ -50,3 +50,17 @@ pyinstaller --onefile frontend.py
 
 The resulting binary is placed inside the `dist` directory. Execute it from
 there so that any bundled assets can be found correctly.
+
+## Future authentication integration
+
+The example application intentionally omits user authentication to keep the
+code minimal. FastAPI provides utilities in `fastapi.security` for implementing
+OAuth2 authentication. A common approach is to use
+`OAuth2PasswordBearer` along with token‑based endpoints. The returned token can
+then be required in every API route using `Depends`.
+
+On the frontend side a small Streamlit login form could collect the user
+credentials and store the received token in the session state. Subsequent
+requests from Streamlit would include this token in the `Authorization` header.
+These building blocks make it straightforward to add authentication later while
+keeping the current example simple.
