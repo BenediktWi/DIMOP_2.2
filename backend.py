@@ -1,7 +1,7 @@
 from typing import Dict, List, Optional
 from fastapi import FastAPI, HTTPException, Depends
 
-# TODO: configure OAuth2PasswordBearer and related utilities for authentication
+# TODO: configure OAuth2PasswordBearer and other auth utilities
 # from fastapi.security import OAuth2PasswordBearer
 # oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 from pydantic import BaseModel
@@ -23,8 +23,12 @@ from sqlalchemy.orm import (
 
 DATABASE_URL = "sqlite:///app.db"
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+engine = create_engine(
+    DATABASE_URL, connect_args={"check_same_thread": False}
+)
+SessionLocal = sessionmaker(
+    bind=engine, autoflush=False, autocommit=False
+)
 Base = declarative_base()
 
 
@@ -36,7 +40,9 @@ class Material(Base):
     description = Column(String, nullable=True)
     co2_value = Column(Float, nullable=True)
     components = relationship(
-        "Component", back_populates="material", cascade="all, delete-orphan"
+        "Component",
+        back_populates="material",
+        cascade="all, delete-orphan",
     )
 
 
@@ -46,7 +52,11 @@ class Component(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
     level = Column(Integer, nullable=True)
-    parent_id = Column(Integer, ForeignKey("components.id"), nullable=True)
+    parent_id = Column(
+        Integer,
+        ForeignKey("components.id"),
+        nullable=True,
+    )
     is_atomic = Column(Boolean, default=False)
     weight = Column(Float, nullable=True)
     reusable = Column(Boolean, default=False)
@@ -74,7 +84,9 @@ class Sustainability(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     component_id = Column(
-        Integer, ForeignKey("components.id", ondelete="CASCADE"), unique=True
+        Integer,
+        ForeignKey("components.id", ondelete="CASCADE"),
+        unique=True,
     )
     name = Column(String, nullable=False)
     score = Column(Float, nullable=False)
@@ -151,7 +163,9 @@ def get_db():
 
 
 def compute_component_score(
-    component: Component, db: Session, cache: Dict[int, float] | None = None
+    component: Component,
+    db: Session,
+    cache: Dict[int, float] | None = None,
 ) -> float:
     if cache is None:
         cache = {}
@@ -196,7 +210,9 @@ def on_startup():
 # Material routes
 # TODO: use Depends(get_current_user) in each route to require authentication
 @app.post("/materials", response_model=MaterialRead)
-def create_material(material: MaterialCreate, db: Session = Depends(get_db)):
+def create_material(
+    material: MaterialCreate, db: Session = Depends(get_db)
+):
     db_material = Material(**material.dict())
     db.add(db_material)
     db.commit()
@@ -213,7 +229,10 @@ def read_materials(db: Session = Depends(get_db)):
 def read_material(material_id: int, db: Session = Depends(get_db)):
     material = db.get(Material, material_id)
     if not material:
-        raise HTTPException(status_code=404, detail="Material not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Material not found",
+        )
     return material
 
 
@@ -225,7 +244,10 @@ def update_material(
 ):
     material = db.get(Material, material_id)
     if not material:
-        raise HTTPException(status_code=404, detail="Material not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Material not found",
+        )
     for key, value in material_update.dict(exclude_unset=True).items():
         setattr(material, key, value)
     db.commit()
@@ -237,7 +259,10 @@ def update_material(
 def delete_material(material_id: int, db: Session = Depends(get_db)):
     material = db.get(Material, material_id)
     if not material:
-        raise HTTPException(status_code=404, detail="Material not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Material not found",
+        )
     db.delete(material)
     db.commit()
     return {"ok": True}
@@ -251,7 +276,10 @@ def create_component(
     db: Session = Depends(get_db),
 ):
     if not db.get(Material, component.material_id):
-        raise HTTPException(status_code=400, detail="Material does not exist")
+        raise HTTPException(
+            status_code=400,
+            detail="Material does not exist",
+        )
     if component.parent_id and not db.get(
         Component,
         component.parent_id,
@@ -276,7 +304,10 @@ def read_components(db: Session = Depends(get_db)):
 def read_component(component_id: int, db: Session = Depends(get_db)):
     component = db.get(Component, component_id)
     if not component:
-        raise HTTPException(status_code=404, detail="Component not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Component not found",
+        )
     return component
 
 
@@ -288,12 +319,18 @@ def update_component(
 ):
     component = db.get(Component, component_id)
     if not component:
-        raise HTTPException(status_code=404, detail="Component not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Component not found",
+        )
     if component_update.material_id and not db.get(
         Material,
         component_update.material_id,
     ):
-        raise HTTPException(status_code=400, detail="Material does not exist")
+        raise HTTPException(
+            status_code=400,
+            detail="Material does not exist",
+        )
     if component_update.parent_id and not db.get(
         Component,
         component_update.parent_id,
@@ -313,13 +350,19 @@ def update_component(
 def delete_component(component_id: int, db: Session = Depends(get_db)):
     component = db.get(Component, component_id)
     if not component:
-        raise HTTPException(status_code=404, detail="Component not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Component not found",
+        )
     db.delete(component)
     db.commit()
     return {"ok": True}
 
 
-@app.post("/sustainability/calculate", response_model=List[SustainabilityRead])
+@app.post(
+    "/sustainability/calculate",
+    response_model=List[SustainabilityRead],
+)
 def calculate_sustainability(db: Session = Depends(get_db)):
     results = []
     cache: Dict[int, float] = {}
