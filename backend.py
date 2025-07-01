@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException, Depends
 # from fastapi.security import OAuth2PasswordBearer
 # oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, String, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker, Session
 
 DATABASE_URL = "sqlite:///app.db"
@@ -22,6 +22,7 @@ class Material(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, index=True, nullable=False)
     description = Column(String, nullable=True)
+    co2_value = Column(Float, nullable=True)
     components = relationship(
         "Component", back_populates="material", cascade="all, delete-orphan"
     )
@@ -40,6 +41,7 @@ class Component(Base):
 class MaterialBase(BaseModel):
     name: str
     description: Optional[str] = None
+    co2_value: Optional[float] = None
 
 
 class MaterialCreate(MaterialBase):
