@@ -14,7 +14,12 @@ from sqlalchemy import (
     ForeignKey,
     Boolean,
 )
-from sqlalchemy.orm import declarative_base, relationship, sessionmaker, Session
+from sqlalchemy.orm import (
+    declarative_base,
+    relationship,
+    sessionmaker,
+    Session,
+)
 
 DATABASE_URL = "sqlite:///app.db"
 
@@ -46,7 +51,10 @@ class Component(Base):
     weight = Column(Float, nullable=True)
     reusable = Column(Boolean, default=False)
     connection_type = Column(String, nullable=True)
-    material_id = Column(Integer, ForeignKey("materials.id", ondelete="CASCADE"))
+    material_id = Column(
+        Integer,
+        ForeignKey("materials.id", ondelete="CASCADE"),
+    )
     material = relationship("Material", back_populates="components")
     parent = relationship(
         "Component",
@@ -156,12 +164,15 @@ def compute_component_score(
         score = weight * material_co2
     else:
         child_scores = [
-            compute_component_score(child, db, cache) for child in component.children
+            compute_component_score(child, db, cache)
+            for child in component.children
         ]
         children_sum = sum(child_scores)
         weight = component.weight or 1
         reuse_factor = 0.9 if component.reusable else 1.0
-        connection_factor = 0.95 if component.connection_type == "screwed" else 1.0
+        connection_factor = (
+            0.95 if component.connection_type == "screwed" else 1.0
+        )
         score = children_sum * weight * reuse_factor * connection_factor
 
     cache[component.id] = score
@@ -208,7 +219,9 @@ def read_material(material_id: int, db: Session = Depends(get_db)):
 
 @app.put("/materials/{material_id}", response_model=MaterialRead)
 def update_material(
-    material_id: int, material_update: MaterialUpdate, db: Session = Depends(get_db)
+    material_id: int,
+    material_update: MaterialUpdate,
+    db: Session = Depends(get_db),
 ):
     material = db.get(Material, material_id)
     if not material:
@@ -233,11 +246,20 @@ def delete_material(material_id: int, db: Session = Depends(get_db)):
 # Component routes
 # TODO: secure these routes with Depends(get_current_user)
 @app.post("/components", response_model=ComponentRead)
-def create_component(component: ComponentCreate, db: Session = Depends(get_db)):
+def create_component(
+    component: ComponentCreate,
+    db: Session = Depends(get_db),
+):
     if not db.get(Material, component.material_id):
         raise HTTPException(status_code=400, detail="Material does not exist")
-    if component.parent_id and not db.get(Component, component.parent_id):
-        raise HTTPException(status_code=400, detail="Parent component does not exist")
+    if component.parent_id and not db.get(
+        Component,
+        component.parent_id,
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Parent component does not exist",
+        )
     db_component = Component(**component.dict())
     db.add(db_component)
     db.commit()
@@ -260,17 +282,26 @@ def read_component(component_id: int, db: Session = Depends(get_db)):
 
 @app.put("/components/{component_id}", response_model=ComponentRead)
 def update_component(
-    component_id: int, component_update: ComponentUpdate, db: Session = Depends(get_db)
+    component_id: int,
+    component_update: ComponentUpdate,
+    db: Session = Depends(get_db),
 ):
     component = db.get(Component, component_id)
     if not component:
         raise HTTPException(status_code=404, detail="Component not found")
     if component_update.material_id and not db.get(
-        Material, component_update.material_id
+        Material,
+        component_update.material_id,
     ):
         raise HTTPException(status_code=400, detail="Material does not exist")
-    if component_update.parent_id and not db.get(Component, component_update.parent_id):
-        raise HTTPException(status_code=400, detail="Parent component does not exist")
+    if component_update.parent_id and not db.get(
+        Component,
+        component_update.parent_id,
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Parent component does not exist",
+        )
     for key, value in component_update.dict(exclude_unset=True).items():
         setattr(component, key, value)
     db.commit()
