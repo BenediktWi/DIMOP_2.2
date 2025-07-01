@@ -25,14 +25,17 @@ python -m uvicorn backend:app --reload
 
 ### Upgrade from previous versions
 
-Version 2.2 introduces a new `co2_value` column on the `materials` table. The
-example doesn't use a migration tool, so the easiest way to apply the change is
-to delete the existing `app.db` file and let FastAPI recreate it on the next
-startup. If you want to keep your data you can also add the column manually.
-Without this step the API will fail to start with the error `no such column: materials.co2_value`.
+Version 2.2 introduces a new `co2_value` column on the `materials` table.
+Newer versions may also require additional columns on the `components` table.
+Because the example doesn't use a migration tool, you have two options when
+upgrading: delete the existing `app.db` file and let FastAPI recreate it on the
+next startup, or manually add the missing columns using `ALTER TABLE`
+statements. Without this step the API will fail to start with errors such as
+`no such column: materials.co2_value`.
 
 ```sql
 ALTER TABLE materials ADD COLUMN co2_value FLOAT;
+-- run additional ALTER TABLE statements for any new component columns
 ```
 
 ## Starting the Streamlit frontend
