@@ -4,7 +4,15 @@ from fastapi import FastAPI, HTTPException, Depends
 # from fastapi.security import OAuth2PasswordBearer
 # oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey
+from sqlalchemy import (
+    create_engine,
+    Column,
+    Integer,
+    String,
+    Float,
+    ForeignKey,
+    Boolean,
+)
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker, Session
 
 DATABASE_URL = "sqlite:///app.db"
@@ -33,8 +41,25 @@ class Component(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
+    level = Column(Integer, nullable=True)
+    parent_id = Column(Integer, ForeignKey("components.id"), nullable=True)
+    is_atomic = Column(Boolean, default=False)
+    weight = Column(Float, nullable=True)
+    reusable = Column(Boolean, default=False)
+    connection_type = Column(String, nullable=True)
     material_id = Column(Integer, ForeignKey("materials.id", ondelete="CASCADE"))
     material = relationship("Material", back_populates="components")
+    parent = relationship(
+        "Component",
+        remote_side=[id],
+        back_populates="children",
+        foreign_keys=[parent_id],
+    )
+    children = relationship(
+        "Component",
+        back_populates="parent",
+        cascade="all, delete-orphan",
+    )
 
 
 # Pydantic schemas
@@ -62,6 +87,12 @@ class MaterialRead(MaterialBase):
 class ComponentBase(BaseModel):
     name: str
     material_id: int
+    level: Optional[int] = None
+    parent_id: Optional[int] = None
+    is_atomic: Optional[bool] = None
+    weight: Optional[float] = None
+    reusable: Optional[bool] = None
+    connection_type: Optional[str] = None
 
 
 class ComponentCreate(ComponentBase):
@@ -154,6 +185,8 @@ def delete_material(material_id: int, db: Session = Depends(get_db)):
 def create_component(component: ComponentCreate, db: Session = Depends(get_db)):
     if not db.get(Material, component.material_id):
         raise HTTPException(status_code=400, detail="Material does not exist")
+    if component.parent_id and not db.get(Component, component.parent_id):
+        raise HTTPException(status_code=400, detail="Parent component does not exist")
     db_component = Component(**component.dict())
     db.add(db_component)
     db.commit()
@@ -183,6 +216,8 @@ def update_component(
         raise HTTPException(status_code=404, detail="Component not found")
     if component_update.material_id and not db.get(Material, component_update.material_id):
         raise HTTPException(status_code=400, detail="Material does not exist")
+    if component_update.parent_id and not db.get(Component, component_update.parent_id):
+        raise HTTPException(status_code=400, detail="Parent component does not exist")
     for key, value in component_update.dict(exclude_unset=True).items():
         setattr(component, key, value)
     db.commit()
