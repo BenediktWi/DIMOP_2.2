@@ -12,23 +12,31 @@ except (FileNotFoundError, KeyError, StreamlitAPIException):
 
 # TODO: add Streamlit-based login und Token-Handling
 # auth_token = st.session_state.get("token")
-# AUTH_HEADERS = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
+
+# AUTH_HEADERS = {
+#     "Authorization": f"Bearer {auth_token}"
+# } if auth_token else {}
+
 
 def get_materials():
     try:
-        r = requests.get(f"{BACKEND_URL}/materials")  # später mit AUTH_HEADERS
+        r = requests.get(f"{BACKEND_URL}/materials")  # später mit
+        # AUTH_HEADERS
         r.raise_for_status()
         return r.json()
     except Exception:
         return []
 
+
 def get_components():
     try:
-        r = requests.get(f"{BACKEND_URL}/components")  # später mit AUTH_HEADERS
+        r = requests.get(f"{BACKEND_URL}/components")  # später mit
+        # AUTH_HEADERS
         r.raise_for_status()
         return r.json()
     except Exception:
         return []
+
 
 st.title("DIMOP 2.2")
 page = st.sidebar.selectbox("Page", ["Materials", "Components"])
@@ -91,7 +99,11 @@ elif page == "Components":
     st.header("Create component")
     with st.form("create_component"):
         name = st.text_input("Name")
-        mat_name = st.selectbox("Material", list(mat_dict.keys())) if mat_dict else ""
+        mat_name = (
+            st.selectbox("Material", list(mat_dict.keys()))
+            if mat_dict
+            else ""
+        )
         submitted = st.form_submit_button("Create")
         if submitted and name and mat_dict:
             res = requests.post(
@@ -113,15 +125,33 @@ elif page == "Components":
         with st.form("update_component"):
             up_name = st.text_input("Name", comp["name"])
             mat_names = list(mat_dict.keys())
-            mat_idx = mat_names.index(
-                next((n for n, i in mat_dict.items() if i == comp['material_id']), mat_names[0])
-            ) if mat_dict else 0
-            up_mat = st.selectbox("Material", mat_names, index=mat_idx) if mat_dict else ""
+            mat_idx = (
+                mat_names.index(
+                    next(
+                        (
+                            n
+                            for n, i in mat_dict.items()
+                            if i == comp['material_id']
+                        ),
+                        mat_names[0],
+                    )
+                )
+                if mat_dict
+                else 0
+            )
+            up_mat = (
+                st.selectbox("Material", mat_names, index=mat_idx)
+                if mat_dict
+                else ""
+            )
             updated = st.form_submit_button("Update")
             if updated:
                 res = requests.put(
                     f"{BACKEND_URL}/components/{comp['id']}",
-                    json={"name": up_name, "material_id": mat_dict.get(up_mat)},
+                    json={
+                        "name": up_name,
+                        "material_id": mat_dict.get(up_mat),
+                    },
                     # TODO: pass AUTH_HEADERS once login is implemented
                 )
                 if res.ok:
@@ -133,7 +163,10 @@ elif page == "Components":
 
     st.header("Existing components")
     for c in components:
-        mat_name = next((m['name'] for m in materials if m['id'] == c['material_id']), 'N/A')
+        mat_name = next(
+            (m['name'] for m in materials if m['id'] == c['material_id']),
+            'N/A',
+        )
         col1, col2 = st.columns([4, 1])
         col1.write(f"{c['name']} ({c['id']}) - Material: {mat_name}")
         if col2.button("Delete", key=f"del_comp_{c['id']}"):
@@ -174,7 +207,9 @@ elif page == "Components":
             col1, col2 = st.columns(2)
             if col1.button("Ja, berechnen"):
                 try:
-                    res = requests.post(f"{BACKEND_URL}/sustainability/calculate")
+                    res = requests.post(
+                        f"{BACKEND_URL}/sustainability/calculate"
+                    )
                     res.raise_for_status()
                     st.session_state.sustainability = res.json()
                 except Exception as e:
