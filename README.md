@@ -17,19 +17,19 @@ pip install -r requirements.txt
 
 ## Running the backend
 
-Start the API server with Uvicorn. The database `app.db` will be created
-automatically in the repository root.
+Start the API server with Uvicorn. The database `app.db` will be created automatically in the repository root. If an old `app.db` from a previous version exists, delete it or add the missing column as shown below; otherwise the API will fail with `no such column: materials.co2_value`.
 
 ```bash
 python -m uvicorn backend:app --reload
 ```
 
-### Updating existing databases
+### Upgrade from previous versions
 
 Version 2.2 introduces a new `co2_value` column on the `materials` table. The
 example doesn't use a migration tool, so the easiest way to apply the change is
 to delete the existing `app.db` file and let FastAPI recreate it on the next
-startup. If you want to keep your data you can also add the column manually:
+startup. If you want to keep your data you can also add the column manually.
+Without this step the API will fail to start with the error `no such column: materials.co2_value`.
 
 ```sql
 ALTER TABLE materials ADD COLUMN co2_value FLOAT;
