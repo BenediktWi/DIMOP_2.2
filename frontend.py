@@ -142,3 +142,51 @@ elif page == "Components":
                 # TODO: pass AUTH_HEADERS once login is implemented
             )
             st.experimental_rerun()
+
+    def build_tree(items):
+        comp_map = {c['id']: {**c, 'children': []} for c in items}
+        roots = []
+        for comp in comp_map.values():
+            parent_id = comp.get('parent_id')
+            if parent_id and parent_id in comp_map:
+                comp_map[parent_id]['children'].append(comp)
+            else:
+                roots.append(comp)
+        return roots
+
+    def display_tree(nodes, level=0):
+        for node in nodes:
+            indent = " " * (level * 4)
+            st.markdown(f"{indent}- {node['name']} (id:{node['id']})")
+            if node['children']:
+                display_tree(node['children'], level + 1)
+
+    st.header("Component hierarchy")
+    tree = build_tree(components)
+    display_tree(tree)
+
+    if st.button("Fertigstellen"):
+        st.session_state.show_finish = True
+
+    if st.session_state.get("show_finish"):
+        with st.modal("Fertigstellen bestätigen"):
+            st.write("Nachhaltigkeitsbewertung berechnen?")
+            col1, col2 = st.columns(2)
+            if col1.button("Ja, berechnen"):
+                try:
+                    res = requests.post(f"{BACKEND_URL}/sustainability/calculate")
+                    res.raise_for_status()
+                    st.session_state.sustainability = res.json()
+                except Exception as e:
+                    st.session_state.sustainability = []
+                    st.error(str(e))
+                st.session_state.show_finish = False
+                st.experimental_rerun()
+            if col2.button("Abbrechen"):
+                st.session_state.show_finish = False
+                st.experimental_rerun()
+
+    if st.session_state.get("sustainability"):
+        st.header("Sustainability scores")
+        for entry in st.session_state.sustainability:
+            st.write(f"{entry['name']}: {entry['score']:.2f}")
