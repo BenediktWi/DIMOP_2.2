@@ -10,18 +10,42 @@ try:
 except (FileNotFoundError, KeyError, StreamlitAPIException):
     BACKEND_URL = os.getenv("BACKEND_URL", DEFAULT_BACKEND_URL)
 
-# TODO: add Streamlit-based login und Token-Handling
-# auth_token = st.session_state.get("token")
+auth_token = st.session_state.get("token")
 
-# AUTH_HEADERS = {
-#     "Authorization": f"Bearer {auth_token}"
-# } if auth_token else {}
+if not auth_token:
+    with st.sidebar.form("login"):
+        st.write("Login")
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        submitted = st.form_submit_button("Login")
+        if submitted:
+            try:
+                res = requests.post(
+                    f"{BACKEND_URL}/token",
+                    data={"username": username, "password": password},
+                )
+                res.raise_for_status()
+                st.session_state.token = res.json().get("access_token")
+                st.experimental_rerun()
+            except Exception:
+                st.error("Login failed")
+else:
+    st.sidebar.write("Logged in")
+    if st.sidebar.button("Logout"):
+        del st.session_state["token"]
+        st.experimental_rerun()
+
+AUTH_HEADERS = {
+    "Authorization": f"Bearer {st.session_state['token']}"
+} if st.session_state.get("token") else {}
 
 
 def get_materials():
     try:
-        r = requests.get(f"{BACKEND_URL}/materials")  # später mit
-        # AUTH_HEADERS
+        r = requests.get(
+            f"{BACKEND_URL}/materials",
+            headers=AUTH_HEADERS,
+        )
         r.raise_for_status()
         return r.json()
     except Exception:
@@ -30,8 +54,10 @@ def get_materials():
 
 def get_components():
     try:
-        r = requests.get(f"{BACKEND_URL}/components")  # später mit
-        # AUTH_HEADERS
+        r = requests.get(
+            f"{BACKEND_URL}/components",
+            headers=AUTH_HEADERS,
+        )
         r.raise_for_status()
         return r.json()
     except Exception:
@@ -51,7 +77,7 @@ if page == "Materials":
             res = requests.post(
                 f"{BACKEND_URL}/materials",
                 json={"name": name, "description": description},
-                # TODO: pass AUTH_HEADERS once login is implemented
+                headers=AUTH_HEADERS,
             )
             if res.ok:
                 st.success("Material created")
@@ -72,7 +98,7 @@ if page == "Materials":
                 res = requests.put(
                     f"{BACKEND_URL}/materials/{mat['id']}",
                     json={"name": up_name, "description": up_desc},
-                    # TODO: pass AUTH_HEADERS once login is implemented
+                    headers=AUTH_HEADERS,
                 )
                 if res.ok:
                     st.success("Material updated")
@@ -87,8 +113,8 @@ if page == "Materials":
         col1.write(f"{m['name']} ({m['id']}) - {m.get('description', '')}")
         if col2.button("Delete", key=f"del_mat_{m['id']}"):
             requests.delete(
-                f"{BACKEND_URL}/materials/{m['id']}"
-                # TODO: pass AUTH_HEADERS once login is implemented
+                f"{BACKEND_URL}/materials/{m['id']}",
+                headers=AUTH_HEADERS,
             )
             st.experimental_rerun()
 
@@ -109,7 +135,7 @@ elif page == "Components":
             res = requests.post(
                 f"{BACKEND_URL}/components",
                 json={"name": name, "material_id": mat_dict[mat_name]},
-                # TODO: pass AUTH_HEADERS once login is implemented
+                headers=AUTH_HEADERS,
             )
             if res.ok:
                 st.success("Component created")
@@ -152,7 +178,7 @@ elif page == "Components":
                         "name": up_name,
                         "material_id": mat_dict.get(up_mat),
                     },
-                    # TODO: pass AUTH_HEADERS once login is implemented
+                    headers=AUTH_HEADERS,
                 )
                 if res.ok:
                     st.success("Component updated")
@@ -171,8 +197,8 @@ elif page == "Components":
         col1.write(f"{c['name']} ({c['id']}) - Material: {mat_name}")
         if col2.button("Delete", key=f"del_comp_{c['id']}"):
             requests.delete(
-                f"{BACKEND_URL}/components/{c['id']}"
-                # TODO: pass AUTH_HEADERS once login is implemented
+                f"{BACKEND_URL}/components/{c['id']}",
+                headers=AUTH_HEADERS,
             )
             st.experimental_rerun()
 
