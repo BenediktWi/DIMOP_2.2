@@ -40,12 +40,19 @@ def client():
 
 
 def test_create_and_read_materials(client):
-    resp = client.post("/materials", json={"name": "Steel"})
+    login = client.post(
+        "/token",
+        data={"username": "admin", "password": "secret"},
+    )
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = client.post("/materials", json={"name": "Steel"}, headers=headers)
     assert resp.status_code == 200
     data = resp.json()
     assert data["name"] == "Steel"
 
-    resp = client.get("/materials")
+    resp = client.get("/materials", headers=headers)
     assert resp.status_code == 200
     items = resp.json()
     assert len(items) == 1
