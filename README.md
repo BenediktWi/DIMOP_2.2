@@ -24,6 +24,17 @@ automatically in the repository root.
 python -m uvicorn backend:app --reload
 ```
 
+### Updating existing databases
+
+Version 2.2 introduces a new `co2_value` column on the `materials` table. The
+example doesn't use a migration tool, so the easiest way to apply the change is
+to delete the existing `app.db` file and let FastAPI recreate it on the next
+startup. If you want to keep your data you can also add the column manually:
+
+```sql
+ALTER TABLE materials ADD COLUMN co2_value FLOAT;
+```
+
 ## Starting the Streamlit frontend
 
 Launch the web interface once the backend is running:
