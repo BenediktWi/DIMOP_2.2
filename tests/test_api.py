@@ -4,7 +4,8 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))  # noqa: E402
 
-from fastapi.testclient import TestClient
+import httpx
+from httpx import ASGITransport
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import sessionmaker
@@ -13,7 +14,7 @@ import pytest
 
 
 @pytest.fixture
-def client():
+async def async_client():
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -34,25 +35,29 @@ def client():
             db.close()
 
     backend.app.dependency_overrides[backend.get_db] = override_get_db
-    with TestClient(backend.app) as c:
-        yield c
+    transport = ASGITransport(app=backend.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
     backend.app.dependency_overrides.clear()
 
 
-def test_create_and_read_materials(client):
-    login = client.post(
+@pytest.mark.anyio("asyncio")
+async def test_create_and_read_materials(async_client):
+    login = await async_client.post(
         "/token",
         data={"username": "admin", "password": "secret"},
     )
     token = login.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
-    resp = client.post("/materials", json={"name": "Steel"}, headers=headers)
+    resp = await async_client.post(
+        "/materials", json={"name": "Steel"}, headers=headers
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert data["name"] == "Steel"
 
-    resp = client.get("/materials", headers=headers)
+    resp = await async_client.get("/materials", headers=headers)
     assert resp.status_code == 200
     items = resp.json()
     assert len(items) == 1

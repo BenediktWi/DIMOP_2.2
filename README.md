@@ -79,6 +79,26 @@ pyinstaller --onefile frontend.py
 The resulting binary is placed inside the `dist` directory. Execute it from
 there so that any bundled assets can be found correctly.
 
+## Development
+
+Install the development dependencies using:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+Run the test suite with:
+
+```bash
+pytest
+```
+
+Check the code style using the linter:
+
+```bash
+ruff check .
+```
+
 ## Future authentication integration
 
 The example application intentionally omits user authentication to keep the
