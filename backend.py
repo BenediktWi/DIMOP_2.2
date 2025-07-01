@@ -1,5 +1,6 @@
-from typing import List, Optional
+from typing import Dict, List, Optional
 from fastapi import FastAPI, HTTPException, Depends
+
 # TODO: configure OAuth2PasswordBearer and related utilities for authentication
 # from fastapi.security import OAuth2PasswordBearer
 # oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -17,9 +18,7 @@ from sqlalchemy.orm import declarative_base, relationship, sessionmaker, Session
 
 DATABASE_URL = "sqlite:///app.db"
 
-engine = create_engine(
-    DATABASE_URL, connect_args={"check_same_thread": False}
-)
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
@@ -60,6 +59,18 @@ class Component(Base):
         back_populates="parent",
         cascade="all, delete-orphan",
     )
+
+
+class Sustainability(Base):
+    __tablename__ = "sustainability"
+
+    id = Column(Integer, primary_key=True, index=True)
+    component_id = Column(
+        Integer, ForeignKey("components.id", ondelete="CASCADE"), unique=True
+    )
+    name = Column(String, nullable=False)
+    score = Column(Float, nullable=False)
+    component = relationship("Component")
 
 
 # Pydantic schemas
@@ -110,12 +121,52 @@ class ComponentRead(ComponentBase):
         orm_mode = True
 
 
+class SustainabilityBase(BaseModel):
+    component_id: int
+    name: str
+    sustainability_score: float
+
+
+class SustainabilityRead(SustainabilityBase):
+    id: int
+
+    class Config:
+        orm_mode = True
+
+
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+
+
+def compute_component_score(
+    component: Component, db: Session, cache: Dict[int, float] | None = None
+) -> float:
+    if cache is None:
+        cache = {}
+    if component.id in cache:
+        return cache[component.id]
+
+    if component.is_atomic:
+        material_co2 = component.material.co2_value or 0
+        weight = component.weight or 0
+        score = weight * material_co2
+    else:
+        child_scores = [
+            compute_component_score(child, db, cache) for child in component.children
+        ]
+        children_sum = sum(child_scores)
+        weight = component.weight or 1
+        reuse_factor = 0.9 if component.reusable else 1.0
+        connection_factor = 0.95 if component.connection_type == "screwed" else 1.0
+        score = children_sum * weight * reuse_factor * connection_factor
+
+    cache[component.id] = score
+    return score
+
 
 # TODO: implement `get_current_user` using the OAuth2 scheme above
 # def get_current_user(token: str = Depends(oauth2_scheme)):
@@ -214,7 +265,9 @@ def update_component(
     component = db.get(Component, component_id)
     if not component:
         raise HTTPException(status_code=404, detail="Component not found")
-    if component_update.material_id and not db.get(Material, component_update.material_id):
+    if component_update.material_id and not db.get(
+        Material, component_update.material_id
+    ):
         raise HTTPException(status_code=400, detail="Material does not exist")
     if component_update.parent_id and not db.get(Component, component_update.parent_id):
         raise HTTPException(status_code=400, detail="Parent component does not exist")
@@ -233,3 +286,36 @@ def delete_component(component_id: int, db: Session = Depends(get_db)):
     db.delete(component)
     db.commit()
     return {"ok": True}
+
+
+@app.post("/sustainability/calculate", response_model=List[SustainabilityRead])
+def calculate_sustainability(db: Session = Depends(get_db)):
+    results = []
+    cache: Dict[int, float] = {}
+    components = db.query(Component).all()
+    for comp in components:
+        score = compute_component_score(comp, db, cache)
+        record = (
+            db.query(Sustainability)
+            .filter(Sustainability.component_id == comp.id)
+            .first()
+        )
+        if record:
+            record.score = score
+            record.name = comp.name
+        else:
+            record = Sustainability(
+                component_id=comp.id,
+                name=comp.name,
+                score=score,
+            )
+            db.add(record)
+        db.commit()
+        db.refresh(record)
+        results.append(record)
+    return results
+
+
+@app.get("/sustainability", response_model=List[SustainabilityRead])
+def read_sustainability(db: Session = Depends(get_db)):
+    return db.query(Sustainability).all()
