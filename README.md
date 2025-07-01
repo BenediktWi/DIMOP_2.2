@@ -40,7 +40,7 @@ ALTER TABLE materials ADD COLUMN co2_value FLOAT;
 Launch the web interface once the backend is running:
 
 ```bash
-streamlit run frontend.py
+streamlit run frontend.py  # oder: python -m streamlit run frontend.py
 ```
 
 The Streamlit app looks for the API at `http://localhost:8000` by default. If
