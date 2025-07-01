@@ -214,6 +214,24 @@ def on_startup():
                 conn.execute(
                     text("ALTER TABLE materials ADD COLUMN co2_value FLOAT")
                 )
+    if "components" in inspector.get_table_names():
+        cols = [c["name"] for c in inspector.get_columns("components")]
+        new_columns = [
+            ("level", "INTEGER"),
+            ("parent_id", "INTEGER"),
+            ("is_atomic", "BOOLEAN"),
+            ("weight", "FLOAT"),
+            ("reusable", "BOOLEAN"),
+            ("connection_type", "VARCHAR"),
+        ]
+        for col_name, col_type in new_columns:
+            if col_name not in cols:
+                with engine.connect() as conn:
+                    conn.execute(
+                        text(
+                            f"ALTER TABLE components ADD COLUMN {col_name} {col_type}"
+                        )
+                    )
     Base.metadata.create_all(bind=engine)
 
 
