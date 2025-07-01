@@ -255,8 +255,7 @@ def read_material(
 
 @app.put("/materials/{material_id}", response_model=MaterialRead)
 def update_material(
-    material_id: int,
-    material_update: MaterialUpdate,
+    material_id: int, material_update: MaterialUpdate,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -343,8 +342,7 @@ def read_component(
 
 @app.put("/components/{component_id}", response_model=ComponentRead)
 def update_component(
-    component_id: int,
-    component_update: ComponentUpdate,
+    component_id: int, component_update: ComponentUpdate,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
