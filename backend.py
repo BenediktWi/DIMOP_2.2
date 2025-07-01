@@ -10,6 +10,8 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Boolean,
+    inspect,
+    text,
 )
 from sqlalchemy.orm import (
     declarative_base,
@@ -204,6 +206,14 @@ app = FastAPI()
 
 @app.on_event("startup")
 def on_startup():
+    inspector = inspect(engine)
+    if "materials" in inspector.get_table_names():
+        cols = [c["name"] for c in inspector.get_columns("materials")]
+        if "co2_value" not in cols:
+            with engine.connect() as conn:
+                conn.execute(
+                    text("ALTER TABLE materials ADD COLUMN co2_value FLOAT")
+                )
     Base.metadata.create_all(bind=engine)
 
 

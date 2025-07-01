@@ -6,7 +6,7 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))  # noqa: E402
 
 import httpx
 from httpx import ASGITransport
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import sessionmaker
 import backend
@@ -20,12 +20,18 @@ async def async_client():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+    with engine.connect() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE materials (id INTEGER PRIMARY KEY, name VARCHAR, description VARCHAR)"
+            )
+        )
     TestingSessionLocal = sessionmaker(
         bind=engine, autoflush=False, autocommit=False
     )
     backend.engine = engine
     backend.SessionLocal = TestingSessionLocal
-    backend.Base.metadata.create_all(bind=engine)
+    backend.on_startup()
 
     def override_get_db():
         db = TestingSessionLocal()
