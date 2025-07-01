@@ -1,0 +1,13 @@
+__pycache__/
+.pytest_cache/
+app.db
+dist/
+# Byte-compiled / optimized / DLL files
+*.py[cod]
+# C extensions
+*.so
+# Distribution / packaging
+build/
+*/dist/
+# PyInstaller
+*.spec
