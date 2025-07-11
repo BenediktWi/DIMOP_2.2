@@ -24,7 +24,7 @@ def test_compute_component_score_hierarchy():
         is_atomic=False,
         weight=2.0,
         reusable=False,
-        connection_type="screwed",
+        connection_type=1,
     )
     root.children.append(child)
     child.parent = root
