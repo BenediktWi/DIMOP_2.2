@@ -59,7 +59,7 @@ class Component(Base):
         nullable=True,
     )
     is_atomic = Column(Boolean, default=False)
-    weight = Column(Float, nullable=True)
+    weight = Column(Integer, nullable=True)
     reusable = Column(Boolean, default=False)
     connection_type = Column(String, nullable=True)
     material_id = Column(
@@ -122,7 +122,7 @@ class ComponentBase(BaseModel):
     level: Optional[int] = None
     parent_id: Optional[int] = None
     is_atomic: Optional[bool] = None
-    weight: Optional[float] = None
+    weight: Optional[int] = None
     reusable: Optional[bool] = None
     connection_type: Optional[str] = None
 
@@ -163,6 +163,29 @@ def get_db():
         db.close()
 
 
+def compute_component_weight(
+    component: Component,
+    cache: Dict[int, int] | None = None,
+) -> int:
+    """Recursively compute and assign weights for a component hierarchy."""
+    if cache is None:
+        cache = {}
+    if component.id in cache:
+        return cache[component.id]
+
+    if component.is_atomic:
+        weight = component.weight or 0
+    else:
+        child_weights = [
+            compute_component_weight(child, cache) for child in component.children
+        ]
+        weight = sum(child_weights)
+        component.weight = weight
+
+    cache[component.id] = weight
+    return weight
+
+
 def compute_component_score(
     component: Component,
     db: Session,
@@ -183,12 +206,11 @@ def compute_component_score(
             for child in component.children
         ]
         children_sum = sum(child_scores)
-        weight = component.weight or 1
         reuse_factor = 0.9 if component.reusable else 1.0
         connection_factor = (
             0.95 if component.connection_type == "screwed" else 1.0
         )
-        score = children_sum * weight * reuse_factor * connection_factor
+        score = children_sum * reuse_factor * connection_factor
 
     cache[component.id] = score
     return score
@@ -220,7 +242,7 @@ def on_startup():
             ("level", "INTEGER"),
             ("parent_id", "INTEGER"),
             ("is_atomic", "BOOLEAN"),
-            ("weight", "FLOAT"),
+            ("weight", "INTEGER"),
             ("reusable", "BOOLEAN"),
             ("connection_type", "VARCHAR"),
         ]
@@ -232,6 +254,13 @@ def on_startup():
                             f"ALTER TABLE components ADD COLUMN {col_name} {col_type}"
                         )
                     )
+        # If weight column exists but has wrong type, attempt naive migration
+        for c in inspector.get_columns("components"):
+            if c["name"] == "weight" and not isinstance(c["type"], Integer):
+                with engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE components RENAME COLUMN weight TO weight_old"))
+                    conn.execute(text("ALTER TABLE components ADD COLUMN weight INTEGER"))
+                    conn.execute(text("UPDATE components SET weight = CAST(weight_old AS INTEGER)"))
     Base.metadata.create_all(bind=engine)
 
 
@@ -429,6 +458,7 @@ def calculate_sustainability(db: Session = Depends(get_db)):
     cache: Dict[int, float] = {}
     components = db.query(Component).all()
     for comp in components:
+        compute_component_weight(comp)
         score = compute_component_score(comp, db, cache)
         record = (
             db.query(Sustainability)
