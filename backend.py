@@ -61,7 +61,7 @@ class Component(Base):
     is_atomic = Column(Boolean, default=False)
     weight = Column(Integer, nullable=True)
     reusable = Column(Boolean, default=False)
-    connection_type = Column(String, nullable=True)
+    connection_type = Column(Integer, nullable=True)
     material_id = Column(
         Integer,
         ForeignKey("materials.id", ondelete="CASCADE"),
@@ -124,7 +124,7 @@ class ComponentBase(BaseModel):
     is_atomic: Optional[bool] = None
     weight: Optional[int] = None
     reusable: Optional[bool] = None
-    connection_type: Optional[str] = None
+    connection_type: Optional[int] = None
 
 
 class ComponentCreate(ComponentBase):
@@ -191,25 +191,31 @@ def compute_component_score(
     db: Session,
     cache: Dict[int, float] | None = None,
 ) -> float:
+    """
+    Recursively compute the sustainability score for a component hierarchy.
+    For atomic components: score = weight * material.co2_value.
+    For composite components: score = sum(child_scores) * reuse_factor * connection_factor.
+    """
     if cache is None:
         cache = {}
     if component.id in cache:
         return cache[component.id]
 
     if component.is_atomic:
-        material_co2 = component.material.co2_value or 0
+        material_co2 = component.material.co2_value or 0.0
         weight = component.weight or 0
         score = weight * material_co2
     else:
-        child_scores = [
-            compute_component_score(child, db, cache)
-            for child in component.children
-        ]
+        # Compute scores for children
+        child_scores = [compute_component_score(child, db, cache) for child in component.children]
         children_sum = sum(child_scores)
+        # Apply reuse factor
         reuse_factor = 0.9 if component.reusable else 1.0
-        connection_factor = (
-            0.95 if component.connection_type == "screwed" else 1.0
-        )
+        # Compute connection factor based on connection_type level (0 to 5)
+        level = component.connection_type or 0
+        bounded = min(max(level, 0), 5)
+        connection_factor = 1.0 - 0.05 * bounded
+        # Final composite score
         score = children_sum * reuse_factor * connection_factor
 
     cache[component.id] = score
@@ -244,7 +250,7 @@ def on_startup():
             ("is_atomic", "BOOLEAN"),
             ("weight", "INTEGER"),
             ("reusable", "BOOLEAN"),
-            ("connection_type", "VARCHAR"),
+            ("connection_type", "INTEGER"),
         ]
         for col_name, col_type in new_columns:
             if col_name not in cols:
@@ -254,7 +260,6 @@ def on_startup():
                             f"ALTER TABLE components ADD COLUMN {col_name} {col_type}"
                         )
                     )
-        # If weight column exists but has wrong type, attempt naive migration
         for c in inspector.get_columns("components"):
             if c["name"] == "weight" and not isinstance(c["type"], Integer):
                 with engine.connect() as conn:
@@ -273,7 +278,6 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
 
 
 # Material routes
-# TODO: use Depends(get_current_user) in each route to require authentication
 @app.post("/materials", response_model=MaterialRead)
 def create_material(
     material: MaterialCreate,
@@ -345,9 +349,7 @@ def delete_material(
     db.commit()
     return {"ok": True}
 
-
-# Component routes
-# TODO: secure these routes with Depends(get_current_user)
+# Component.routes
 @app.post("/components", response_model=ComponentRead)
 def create_component(
     component: ComponentCreate,
@@ -448,7 +450,7 @@ def delete_component(
     db.commit()
     return {"ok": True}
 
-
+# Sustainability routes
 @app.post(
     "/sustainability/calculate",
     response_model=List[SustainabilityRead],
@@ -479,7 +481,6 @@ def calculate_sustainability(db: Session = Depends(get_db)):
         db.refresh(record)
         results.append(record)
     return results
-
 
 @app.get("/sustainability", response_model=List[SustainabilityRead])
 def read_sustainability(db: Session = Depends(get_db)):
