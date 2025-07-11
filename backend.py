@@ -61,7 +61,7 @@ class Component(Base):
     is_atomic = Column(Boolean, default=False)
     weight = Column(Float, nullable=True)
     reusable = Column(Boolean, default=False)
-    connection_type = Column(String, nullable=True)
+    connection_type = Column(Integer, nullable=True)
     material_id = Column(
         Integer,
         ForeignKey("materials.id", ondelete="CASCADE"),
@@ -124,7 +124,7 @@ class ComponentBase(BaseModel):
     is_atomic: Optional[bool] = None
     weight: Optional[float] = None
     reusable: Optional[bool] = None
-    connection_type: Optional[str] = None
+    connection_type: Optional[int] = None
 
 
 class ComponentCreate(ComponentBase):
@@ -185,9 +185,9 @@ def compute_component_score(
         children_sum = sum(child_scores)
         weight = component.weight or 1
         reuse_factor = 0.9 if component.reusable else 1.0
-        connection_factor = (
-            0.95 if component.connection_type == "screwed" else 1.0
-        )
+        level = component.connection_type or 0
+        bounded = min(max(level, 0), 5)
+        connection_factor = 1.0 - 0.05 * bounded
         score = children_sum * weight * reuse_factor * connection_factor
 
     cache[component.id] = score
@@ -222,7 +222,7 @@ def on_startup():
             ("is_atomic", "BOOLEAN"),
             ("weight", "FLOAT"),
             ("reusable", "BOOLEAN"),
-            ("connection_type", "VARCHAR"),
+            ("connection_type", "INTEGER"),
         ]
         for col_name, col_type in new_columns:
             if col_name not in cols:
