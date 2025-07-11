@@ -62,6 +62,9 @@ class Component(Base):
     weight = Column(Float, nullable=True)
     reusable = Column(Boolean, default=False)
     connection_type = Column(String, nullable=True)
+    # New numeric connection strength (percentage). If set, supersedes
+    # ``connection_type`` when computing scores.
+    connection_strength = Column(Integer, nullable=True)
     material_id = Column(
         Integer,
         ForeignKey("materials.id", ondelete="CASCADE"),
@@ -125,6 +128,7 @@ class ComponentBase(BaseModel):
     weight: Optional[float] = None
     reusable: Optional[bool] = None
     connection_type: Optional[str] = None
+    connection_strength: Optional[int] = None
 
 
 class ComponentCreate(ComponentBase):
@@ -163,6 +167,18 @@ def get_db():
         db.close()
 
 
+def compute_component_weight(component: Component) -> float:
+    """Recursively compute and propagate component weights."""
+    if component.is_atomic:
+        return component.weight or 0.0
+
+    child_weights = [compute_component_weight(child) for child in component.children]
+    total = sum(child_weights)
+    if component.weight is None:
+        component.weight = total
+    return component.weight or total
+
+
 def compute_component_score(
     component: Component,
     db: Session,
@@ -185,9 +201,12 @@ def compute_component_score(
         children_sum = sum(child_scores)
         weight = component.weight or 1
         reuse_factor = 0.9 if component.reusable else 1.0
-        connection_factor = (
-            0.95 if component.connection_type == "screwed" else 1.0
-        )
+        if getattr(component, "connection_strength", None) is not None:
+            connection_factor = component.connection_strength / 100
+        else:
+            connection_factor = (
+                0.95 if component.connection_type == "screwed" else 1.0
+            )
         score = children_sum * weight * reuse_factor * connection_factor
 
     cache[component.id] = score
@@ -223,6 +242,7 @@ def on_startup():
             ("weight", "FLOAT"),
             ("reusable", "BOOLEAN"),
             ("connection_type", "VARCHAR"),
+            ("connection_strength", "INTEGER"),
         ]
         for col_name, col_type in new_columns:
             if col_name not in cols:
