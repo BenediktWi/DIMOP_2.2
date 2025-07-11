@@ -29,7 +29,7 @@ def test_compute_component_score_hierarchy():
         is_atomic=False,
         weight=None,
         reusable=False,
-        connection_strength=95,
+        connection_type=1,
     )
     root.children.append(child)
     child.parent = root
