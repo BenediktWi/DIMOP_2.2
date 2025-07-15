@@ -3,3 +3,4 @@ uvicorn
 sqlalchemy
 streamlit
 requests
+graphviz
