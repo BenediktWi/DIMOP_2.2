@@ -72,11 +72,16 @@ if page == "Materials":
     with st.form("create_material"):
         name = st.text_input("Name")
         description = st.text_input("Description")
+        co2_value = st.number_input("CO2 value", value=0.0)
         submitted = st.form_submit_button("Create")
         if submitted and name:
             res = requests.post(
                 f"{BACKEND_URL}/materials",
-                json={"name": name, "description": description},
+                json={
+                    "name": name,
+                    "description": description,
+                    "co2_value": co2_value,
+                },
                 headers=AUTH_HEADERS,
             )
             if res.ok:
@@ -93,11 +98,19 @@ if page == "Materials":
         with st.form("update_material"):
             up_name = st.text_input("Name", mat["name"])
             up_desc = st.text_input("Description", mat.get("description", ""))
+            up_co2 = st.number_input(
+                "CO2 value",
+                value=mat.get("co2_value", 0.0) or 0.0,
+            )
             updated = st.form_submit_button("Update")
             if updated:
                 res = requests.put(
                     f"{BACKEND_URL}/materials/{mat['id']}",
-                    json={"name": up_name, "description": up_desc},
+                    json={
+                        "name": up_name,
+                        "description": up_desc,
+                        "co2_value": up_co2,
+                    },
                     headers=AUTH_HEADERS,
                 )
                 if res.ok:
@@ -121,6 +134,7 @@ if page == "Materials":
 elif page == "Components":
     materials = get_materials()
     mat_dict = {m['name']: m['id'] for m in materials}
+    components = get_components()
 
     st.header("Create component")
     with st.form("create_component"):
@@ -130,11 +144,33 @@ elif page == "Components":
             if mat_dict
             else ""
         )
+        level = st.number_input("Level", value=0, step=1)
+        parent_map = {
+            "None": None,
+            **{
+                f"{c['name']} (id:{c['id']})": c["id"]
+                for c in components
+            },
+        }
+        parent_sel = st.selectbox("Parent component", list(parent_map.keys()))
+        is_atomic = st.checkbox("Atomic")
+        weight = st.number_input("Weight", value=0.0)
+        reusable = st.checkbox("Reusable")
+        connection_type = st.number_input("Connection type", value=0, step=1)
         submitted = st.form_submit_button("Create")
         if submitted and name and mat_dict:
             res = requests.post(
                 f"{BACKEND_URL}/components",
-                json={"name": name, "material_id": mat_dict[mat_name]},
+                json={
+                    "name": name,
+                    "material_id": mat_dict[mat_name],
+                    "level": level,
+                    "parent_id": parent_map[parent_sel],
+                    "is_atomic": is_atomic,
+                    "weight": weight,
+                    "reusable": reusable,
+                    "connection_type": connection_type,
+                },
                 headers=AUTH_HEADERS,
             )
             if res.ok:
@@ -143,7 +179,6 @@ elif page == "Components":
                 st.error(res.text)
 
     st.header("Update component")
-    components = get_components()
     if components:
         comp_options = {f"{c['name']} (id:{c['id']})": c for c in components}
         selected = st.selectbox("Select component", list(comp_options.keys()))
@@ -170,6 +205,45 @@ elif page == "Components":
                 if mat_dict
                 else ""
             )
+            up_level = st.number_input(
+                "Level",
+                value=comp.get("level", 0) or 0,
+                step=1,
+            )
+            parent_map = {
+                "None": None,
+                **{
+                    f"{c['name']} (id:{c['id']})": c["id"]
+                    for c in components
+                },
+            }
+            current_parent = comp.get("parent_id")
+            if current_parent is None:
+                parent_idx = 0
+            else:
+                parent_idx = list(parent_map.values()).index(current_parent)
+            up_parent = st.selectbox(
+                "Parent component",
+                list(parent_map.keys()),
+                index=parent_idx,
+            )
+            up_atomic = st.checkbox(
+                "Atomic",
+                value=comp.get("is_atomic", False),
+            )
+            up_weight = st.number_input(
+                "Weight",
+                value=comp.get("weight", 0.0) or 0.0,
+            )
+            up_reusable = st.checkbox(
+                "Reusable",
+                value=comp.get("reusable", False),
+            )
+            up_conn = st.number_input(
+                "Connection type",
+                value=comp.get("connection_type", 0) or 0,
+                step=1,
+            )
             updated = st.form_submit_button("Update")
             if updated:
                 res = requests.put(
@@ -177,6 +251,12 @@ elif page == "Components":
                     json={
                         "name": up_name,
                         "material_id": mat_dict.get(up_mat),
+                        "level": up_level,
+                        "parent_id": parent_map[up_parent],
+                        "is_atomic": up_atomic,
+                        "weight": up_weight,
+                        "reusable": up_reusable,
+                        "connection_type": up_conn,
                     },
                     headers=AUTH_HEADERS,
                 )
