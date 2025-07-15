@@ -1,6 +1,7 @@
 import os
 import streamlit as st
 from streamlit.errors import StreamlitAPIException
+from graphviz import Digraph
 import requests
 
 # Fallback-Logik für BACKEND_URL: zuerst st.secrets, dann ENV, sonst Default
@@ -62,6 +63,18 @@ def get_components():
         return r.json()
     except Exception:
         return []
+
+
+def build_graphviz_tree(items):
+    dot = Digraph()
+    for comp in items:
+        label = f"{comp['name']}\nLevel {comp.get('level', '')}"
+        dot.node(str(comp['id']), label)
+    for comp in items:
+        parent = comp.get('parent_id')
+        if parent:
+            dot.edge(str(parent), str(comp['id']))
+    return dot
 
 
 st.title("DIMOP 2.2")
@@ -301,6 +314,7 @@ elif page == "Components":
                 display_tree(node['children'], level + 1)
 
     st.header("Component hierarchy")
+    st.graphviz_chart(build_graphviz_tree(components))
     tree = build_tree(components)
     display_tree(tree)
 
