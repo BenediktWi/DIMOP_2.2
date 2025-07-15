@@ -7,7 +7,7 @@ Python.
 ## Requirements
 
 - **Python 3.10+**
-- `fastapi`, `sqlalchemy`, `uvicorn`, `streamlit`, `requests`
+- `fastapi`, `sqlalchemy`, `uvicorn`, `streamlit`, `requests`, `graphviz`
 
 Install the dependencies with:
 
@@ -64,6 +64,9 @@ ways:
    export BACKEND_URL="http://localhost:8000"
    streamlit run frontend.py
    ```
+
+The components page also displays a Graphviz diagram of the component hierarchy.
+This requires the `graphviz` Python package from `requirements.txt`.
 
 ## Packaging with PyInstaller
 
