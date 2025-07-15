@@ -145,7 +145,7 @@ class ComponentRead(ComponentBase):
 class SustainabilityBase(BaseModel):
     component_id: int
     name: str
-    sustainability_score: float
+    score: float
 
 
 class SustainabilityRead(SustainabilityBase):
