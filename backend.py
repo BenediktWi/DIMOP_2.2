@@ -1,5 +1,7 @@
 from typing import Dict, List, Optional
-from fastapi import FastAPI, HTTPException, Depends
+import csv
+import io
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Response
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from sqlalchemy import (
@@ -454,3 +456,109 @@ def calculate_sustainability(db: Session = Depends(get_db)):
 @app.get("/sustainability", response_model=List[SustainabilityRead])
 def read_sustainability(db: Session = Depends(get_db)):
     return db.query(Sustainability).all()
+
+
+@app.get("/export")
+def export_csv(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "model",
+        "id",
+        "name",
+        "description",
+        "co2_value",
+        "material_id",
+        "level",
+        "parent_id",
+        "is_atomic",
+        "weight",
+        "reusable",
+        "connection_type",
+    ])
+    for mat in db.query(Material).all():
+        writer.writerow(
+            [
+                "material",
+                mat.id,
+                mat.name,
+                mat.description or "",
+                mat.co2_value if mat.co2_value is not None else "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+            ]
+        )
+    for comp in db.query(Component).all():
+        writer.writerow(
+            [
+                "component",
+                comp.id,
+                comp.name,
+                "",
+                "",
+                comp.material_id,
+                comp.level if comp.level is not None else "",
+                comp.parent_id if comp.parent_id is not None else "",
+                comp.is_atomic if comp.is_atomic is not None else "",
+                comp.weight if comp.weight is not None else "",
+                comp.reusable if comp.reusable is not None else "",
+                comp.connection_type if comp.connection_type is not None else "",
+            ]
+        )
+    output.seek(0)
+    return Response(output.getvalue(), media_type="text/csv")
+
+
+@app.post("/import")
+async def import_csv(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    content = await file.read()
+    reader = csv.DictReader(io.StringIO(content.decode()))
+    materials: List[Material] = []
+    components: List[Component] = []
+    for row in reader:
+        model = row.get("model")
+        if model == "material":
+            materials.append(
+                Material(
+                    id=int(row["id"]),
+                    name=row["name"],
+                    description=row.get("description") or None,
+                    co2_value=float(row["co2_value"]) if row.get("co2_value") else None,
+                )
+            )
+        elif model == "component":
+            components.append(
+                Component(
+                    id=int(row["id"]),
+                    name=row["name"],
+                    material_id=int(row.get("material_id")) if row.get("material_id") else None,
+                    level=int(row["level"]) if row.get("level") else None,
+                    parent_id=int(row["parent_id"]) if row.get("parent_id") else None,
+                    is_atomic=row.get("is_atomic", "").lower() == "true",
+                    weight=float(row["weight"]) if row.get("weight") else None,
+                    reusable=row.get("reusable", "").lower() == "true",
+                    connection_type=int(row["connection_type"]) if row.get("connection_type") else None,
+                )
+            )
+    for mat in materials:
+        db.merge(mat)
+    db.commit()
+    for comp in components:
+        db.merge(comp)
+    db.commit()
+    return {
+        "imported_materials": len(materials),
+        "imported_components": len(components),
+    }
