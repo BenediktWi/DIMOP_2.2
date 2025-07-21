@@ -5,28 +5,35 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))  # noqa: E402
 
 import pytest
-from backend import compute_component_score, Component, Material
+from backend import (
+    compute_component_score,
+    compute_component_weight,
+    Component,
+    Material,
+)
 
 
 def test_compute_component_score_atomic():
     mat = Material(id=1, name="Steel", co2_value=2.0)
-    comp = Component(id=1, is_atomic=True, weight=3.0, material=mat)
+    comp = Component(id=1, is_atomic=True, weight=3, material=mat)
     score = compute_component_score(comp, None)
     assert score == 6.0
 
 
 def test_compute_component_score_hierarchy():
     mat = Material(id=1, name="Steel", co2_value=5.0)
-    child = Component(id=2, name="child", is_atomic=True, weight=1.0, material=mat)
+    child = Component(id=2, name="child", is_atomic=True, weight=1, material=mat)
     root = Component(
         id=3,
         name="root",
         is_atomic=False,
-        weight=2.0,
+        weight=None,
         reusable=False,
         connection_type=1,
     )
     root.children.append(child)
     child.parent = root
+    compute_component_weight(root)
+    assert root.weight == child.weight
     score = compute_component_score(root, None)
-    assert pytest.approx(score) == 9.5
+    assert pytest.approx(score) == 4.75

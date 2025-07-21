@@ -59,7 +59,7 @@ class Component(Base):
         nullable=True,
     )
     is_atomic = Column(Boolean, default=False)
-    weight = Column(Float, nullable=True)
+    weight = Column(Integer, nullable=True)
     reusable = Column(Boolean, default=False)
     connection_type = Column(Integer, nullable=True)
     material_id = Column(
@@ -122,7 +122,7 @@ class ComponentBase(BaseModel):
     level: Optional[int] = None
     parent_id: Optional[int] = None
     is_atomic: Optional[bool] = None
-    weight: Optional[float] = None
+    weight: Optional[int] = None
     reusable: Optional[bool] = None
     connection_type: Optional[int] = None
 
@@ -163,32 +163,60 @@ def get_db():
         db.close()
 
 
-def compute_component_score(
+def compute_component_weight(
     component: Component,
-    db: Session,
-    cache: Dict[int, float] | None = None,
-) -> float:
+    cache: Dict[int, int] | None = None,
+) -> int:
+    """Recursively compute and assign weights for a component hierarchy."""
     if cache is None:
         cache = {}
     if component.id in cache:
         return cache[component.id]
 
     if component.is_atomic:
-        material_co2 = component.material.co2_value or 0
+        weight = component.weight or 0
+    else:
+        child_weights = [
+            compute_component_weight(child, cache) for child in component.children
+        ]
+        weight = sum(child_weights)
+        component.weight = weight
+
+    cache[component.id] = weight
+    return weight
+
+
+def compute_component_score(
+    component: Component,
+    db: Session,
+    cache: Dict[int, float] | None = None,
+) -> float:
+    """
+    Recursively compute the sustainability score for a component hierarchy.
+    For atomic components: score = weight * material.co2_value.
+    For composite components: score = sum(child_scores) * reuse_factor * connection_factor.
+    """
+    if cache is None:
+        cache = {}
+    if component.id in cache:
+        return cache[component.id]
+
+    if component.is_atomic:
+        material_co2 = component.material.co2_value or 0.0
         weight = component.weight or 0
         score = weight * material_co2
     else:
-        child_scores = [
-            compute_component_score(child, db, cache)
-            for child in component.children
-        ]
+        # Compute scores for children
+        child_scores = [compute_component_score(child, db, cache) for child in component.children]
         children_sum = sum(child_scores)
-        weight = component.weight or 1
+        # Apply reuse factor
         reuse_factor = 0.9 if component.reusable else 1.0
+        # Compute connection factor based on connection_type level (0 to 5)
         level = component.connection_type or 0
         bounded = min(max(level, 0), 5)
         connection_factor = 1.0 - 0.05 * bounded
-        score = children_sum * weight * reuse_factor * connection_factor
+        # Final composite score
+        score = children_sum * reuse_factor * connection_factor
 
     cache[component.id] = score
     return score
@@ -220,7 +248,7 @@ def on_startup():
             ("level", "INTEGER"),
             ("parent_id", "INTEGER"),
             ("is_atomic", "BOOLEAN"),
-            ("weight", "FLOAT"),
+            ("weight", "INTEGER"),
             ("reusable", "BOOLEAN"),
             ("connection_type", "INTEGER"),
         ]
@@ -232,6 +260,12 @@ def on_startup():
                             f"ALTER TABLE components ADD COLUMN {col_name} {col_type}"
                         )
                     )
+        for c in inspector.get_columns("components"):
+            if c["name"] == "weight" and not isinstance(c["type"], Integer):
+                with engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE components RENAME COLUMN weight TO weight_old"))
+                    conn.execute(text("ALTER TABLE components ADD COLUMN weight INTEGER"))
+                    conn.execute(text("UPDATE components SET weight = CAST(weight_old AS INTEGER)"))
     Base.metadata.create_all(bind=engine)
 
 
@@ -244,7 +278,6 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
 
 
 # Material routes
-# TODO: use Depends(get_current_user) in each route to require authentication
 @app.post("/materials", response_model=MaterialRead)
 def create_material(
     material: MaterialCreate,
@@ -316,9 +349,7 @@ def delete_material(
     db.commit()
     return {"ok": True}
 
-
-# Component routes
-# TODO: secure these routes with Depends(get_current_user)
+# Component.routes
 @app.post("/components", response_model=ComponentRead)
 def create_component(
     component: ComponentCreate,
@@ -419,7 +450,7 @@ def delete_component(
     db.commit()
     return {"ok": True}
 
-
+# Sustainability routes
 @app.post(
     "/sustainability/calculate",
     response_model=List[SustainabilityRead],
@@ -429,6 +460,7 @@ def calculate_sustainability(db: Session = Depends(get_db)):
     cache: Dict[int, float] = {}
     components = db.query(Component).all()
     for comp in components:
+        compute_component_weight(comp)
         score = compute_component_score(comp, db, cache)
         record = (
             db.query(Sustainability)
@@ -449,7 +481,6 @@ def calculate_sustainability(db: Session = Depends(get_db)):
         db.refresh(record)
         results.append(record)
     return results
-
 
 @app.get("/sustainability", response_model=List[SustainabilityRead])
 def read_sustainability(db: Session = Depends(get_db)):
