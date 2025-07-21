@@ -107,6 +107,16 @@ Check the code style using the linter:
 ruff check .
 ```
 
+## CSV export/import
+
+Two helper endpoints make it easy to backup the database contents.
+
+- `GET /export` returns all materials and components in a single CSV file. Each
+  row includes a `model` column with either `material` or `component` and the
+  corresponding fields.
+- `POST /import` accepts an uploaded CSV (field name `file`) and recreates the
+  records in the database.
+
 ## Future authentication integration
 
 The example application intentionally omits user authentication to keep the
