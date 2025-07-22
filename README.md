@@ -117,6 +117,16 @@ Two helper endpoints make it easy to backup the database contents.
 - `POST /import` accepts an uploaded CSV (field name `file`) and recreates the
   records in the database.
 
+## Projects
+
+Projects are stored in a small `projects.db` database. Each project also
+receives its own SQLite file (`project_<id>.db`) containing the materials and
+components tables.
+
+- `GET /projects` returns the list of projects.
+- `POST /projects` creates a new project and initializes its database. The JSON
+  body must include a `name` field.
+
 ## Future authentication integration
 
 The example application intentionally omits user authentication to keep the

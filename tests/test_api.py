@@ -20,15 +20,23 @@ async def async_client():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+    # prepare minimal schema
     with engine.connect() as conn:
         conn.execute(
             text(
                 "CREATE TABLE materials (id INTEGER PRIMARY KEY, name VARCHAR, description VARCHAR)"
             )
         )
+        conn.execute(
+            text(
+                "CREATE TABLE projects (id INTEGER PRIMARY KEY, name VARCHAR)"
+            )
+        )
     TestingSessionLocal = sessionmaker(
         bind=engine, autoflush=False, autocommit=False
     )
+
+    # apply migrations & register test engine
     backend.initialize_engine(engine)
     backend.ENGINES["test"] = engine
 
@@ -41,10 +49,14 @@ async def async_client():
         finally:
             db.close()
 
+    # override dependencies
     backend.app.dependency_overrides[backend.get_db] = override_get_db
+    backend.app.dependency_overrides[backend.get_projects_db] = override_get_db
+
     transport = ASGITransport(app=backend.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+
     backend.app.dependency_overrides.clear()
 
 
@@ -55,6 +67,7 @@ async def async_client_missing_columns():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+    # prepare schema missing some component columns
     with engine.connect() as conn:
         conn.execute(
             text(
@@ -66,9 +79,16 @@ async def async_client_missing_columns():
                 "CREATE TABLE components (id INTEGER PRIMARY KEY, name VARCHAR, material_id INTEGER)"
             )
         )
+        conn.execute(
+            text(
+                "CREATE TABLE projects (id INTEGER PRIMARY KEY, name VARCHAR)"
+            )
+        )
     TestingSessionLocal = sessionmaker(
         bind=engine, autoflush=False, autocommit=False
     )
+
+    # apply migrations & register test engine
     backend.initialize_engine(engine)
     backend.ENGINES["test"] = engine
 
@@ -81,10 +101,14 @@ async def async_client_missing_columns():
         finally:
             db.close()
 
+    # override dependencies
     backend.app.dependency_overrides[backend.get_db] = override_get_db
+    backend.app.dependency_overrides[backend.get_projects_db] = override_get_db
+
     transport = ASGITransport(app=backend.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+
     backend.app.dependency_overrides.clear()
 
 
