@@ -1,7 +1,15 @@
 from typing import Dict, List, Optional
 import csv
 import io
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Response
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    Depends,
+    UploadFile,
+    File,
+    Response,
+    Header,
+)
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from sqlalchemy import (
@@ -15,6 +23,7 @@ from sqlalchemy import (
     inspect,
     text,
 )
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import (
     declarative_base,
     relationship,
@@ -24,15 +33,47 @@ from sqlalchemy.orm import (
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-DATABASE_URL = "sqlite:///app.db"
+ENGINES: Dict[str, "Engine"] = {}
 
-engine = create_engine(
-    DATABASE_URL, connect_args={"check_same_thread": False}
-)
-SessionLocal = sessionmaker(
-    bind=engine, autoflush=False, autocommit=False
-)
 Base = declarative_base()
+
+
+def initialize_engine(engine: "Engine") -> None:
+    inspector = inspect(engine)
+    if "materials" in inspector.get_table_names():
+        cols = [c["name"] for c in inspector.get_columns("materials")]
+        if "co2_value" not in cols:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE materials ADD COLUMN co2_value FLOAT"))
+    if "components" in inspector.get_table_names():
+        cols = [c["name"] for c in inspector.get_columns("components")]
+        new_columns = [
+            ("level", "INTEGER"),
+            ("parent_id", "INTEGER"),
+            ("is_atomic", "BOOLEAN"),
+            ("weight", "FLOAT"),
+            ("reusable", "BOOLEAN"),
+            ("connection_type", "INTEGER"),
+        ]
+        for col_name, col_type in new_columns:
+            if col_name not in cols:
+                with engine.connect() as conn:
+                    conn.execute(
+                        text(f"ALTER TABLE components ADD COLUMN {col_name} {col_type}")
+                    )
+    Base.metadata.create_all(bind=engine)
+
+
+def get_engine(project_id: str) -> "Engine":
+    engine = ENGINES.get(project_id)
+    if engine is None:
+        engine = create_engine(
+            f"sqlite:///app_{project_id}.db",
+            connect_args={"check_same_thread": False},
+        )
+        initialize_engine(engine)
+        ENGINES[project_id] = engine
+    return engine
 
 
 class Material(Base):
@@ -153,11 +194,15 @@ class SustainabilityBase(BaseModel):
 class SustainabilityRead(SustainabilityBase):
     id: int
 
-    class Config:
+class Config:
         orm_mode = True
 
 
-def get_db():
+def get_db(project_id: str = Header(..., alias="X-Project")):
+    engine = get_engine(project_id)
+    SessionLocal = sessionmaker(
+        bind=engine, autoflush=False, autocommit=False
+    )
     db = SessionLocal()
     try:
         yield db
@@ -207,34 +252,9 @@ app = FastAPI()
 
 
 @app.on_event("startup")
-def on_startup():
-    inspector = inspect(engine)
-    if "materials" in inspector.get_table_names():
-        cols = [c["name"] for c in inspector.get_columns("materials")]
-        if "co2_value" not in cols:
-            with engine.connect() as conn:
-                conn.execute(
-                    text("ALTER TABLE materials ADD COLUMN co2_value FLOAT")
-                )
-    if "components" in inspector.get_table_names():
-        cols = [c["name"] for c in inspector.get_columns("components")]
-        new_columns = [
-            ("level", "INTEGER"),
-            ("parent_id", "INTEGER"),
-            ("is_atomic", "BOOLEAN"),
-            ("weight", "FLOAT"),
-            ("reusable", "BOOLEAN"),
-            ("connection_type", "INTEGER"),
-        ]
-        for col_name, col_type in new_columns:
-            if col_name not in cols:
-                with engine.connect() as conn:
-                    conn.execute(
-                        text(
-                            f"ALTER TABLE components ADD COLUMN {col_name} {col_type}"
-                        )
-                    )
-    Base.metadata.create_all(bind=engine)
+def on_startup() -> None:
+    """Initialize the default project database on startup."""
+    get_engine("default")
 
 
 @app.post("/token")
@@ -252,6 +272,7 @@ def create_material(
     material: MaterialCreate,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
+    _project_id: str = Header(..., alias="X-Project"),
 ):
     db_material = Material(**material.dict())
     db.add(db_material)
@@ -264,6 +285,7 @@ def create_material(
 def read_materials(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
+    _project_id: str = Header(..., alias="X-Project"),
 ):
     return db.query(Material).all()
 
@@ -273,6 +295,7 @@ def read_material(
     material_id: int,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
+    _project_id: str = Header(..., alias="X-Project"),
 ):
     material = db.get(Material, material_id)
     if not material:
@@ -288,6 +311,7 @@ def update_material(
     material_id: int, material_update: MaterialUpdate,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
+    _project_id: str = Header(..., alias="X-Project"),
 ):
     material = db.get(Material, material_id)
     if not material:
@@ -307,6 +331,7 @@ def delete_material(
     material_id: int,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
+    _project_id: str = Header(..., alias="X-Project"),
 ):
     material = db.get(Material, material_id)
     if not material:
@@ -326,6 +351,7 @@ def create_component(
     component: ComponentCreate,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
+    _project_id: str = Header(..., alias="X-Project"),
 ):
     if not db.get(Material, component.material_id):
         raise HTTPException(
@@ -351,6 +377,7 @@ def create_component(
 def read_components(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
+    _project_id: str = Header(..., alias="X-Project"),
 ):
     return db.query(Component).all()
 
@@ -360,6 +387,7 @@ def read_component(
     component_id: int,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
+    _project_id: str = Header(..., alias="X-Project"),
 ):
     component = db.get(Component, component_id)
     if not component:
@@ -375,6 +403,7 @@ def update_component(
     component_id: int, component_update: ComponentUpdate,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
+    _project_id: str = Header(..., alias="X-Project"),
 ):
     component = db.get(Component, component_id)
     if not component:
@@ -410,6 +439,7 @@ def delete_component(
     component_id: int,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
+    _project_id: str = Header(..., alias="X-Project"),
 ):
     component = db.get(Component, component_id)
     if not component:
@@ -426,7 +456,10 @@ def delete_component(
     "/sustainability/calculate",
     response_model=List[SustainabilityRead],
 )
-def calculate_sustainability(db: Session = Depends(get_db)):
+def calculate_sustainability(
+    db: Session = Depends(get_db),
+    _project_id: str = Header(..., alias="X-Project"),
+):
     results = []
     cache: Dict[int, float] = {}
     components = db.query(Component).all()
@@ -454,7 +487,10 @@ def calculate_sustainability(db: Session = Depends(get_db)):
 
 
 @app.get("/sustainability", response_model=List[SustainabilityRead])
-def read_sustainability(db: Session = Depends(get_db)):
+def read_sustainability(
+    db: Session = Depends(get_db),
+    _project_id: str = Header(..., alias="X-Project"),
+):
     return db.query(Sustainability).all()
 
 
@@ -462,6 +498,7 @@ def read_sustainability(db: Session = Depends(get_db)):
 def export_csv(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
+    _project_id: str = Header(..., alias="X-Project"),
 ):
     output = io.StringIO()
     writer = csv.writer(output)
@@ -522,6 +559,7 @@ async def import_csv(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
+    _project_id: str = Header(..., alias="X-Project"),
 ):
     content = await file.read()
     reader = csv.DictReader(io.StringIO(content.decode()))

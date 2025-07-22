@@ -21,7 +21,10 @@ async def test_export_import_roundtrip(async_client):
         data={"username": "admin", "password": "secret"},
     )
     token = login.json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "X-Project": "test",
+    }
 
     resp = await async_client.post(
         "/materials",
@@ -54,11 +57,12 @@ async def test_export_import_roundtrip(async_client):
     TestingSessionLocal = sessionmaker(
         bind=engine2, autoflush=False, autocommit=False
     )
-    backend.engine = engine2
-    backend.SessionLocal = TestingSessionLocal
-    backend.on_startup()
+    backend.initialize_engine(engine2)
+    backend.ENGINES["test"] = engine2
 
-    def override_get_db():
+    from fastapi import Header
+
+    def override_get_db(project_id: str = Header("test", alias="X-Project")):
         db = TestingSessionLocal()
         try:
             yield db
@@ -73,7 +77,10 @@ async def test_export_import_roundtrip(async_client):
             data={"username": "admin", "password": "secret"},
         )
         token2 = login2.json()["access_token"]
-        headers2 = {"Authorization": f"Bearer {token2}"}
+        headers2 = {
+            "Authorization": f"Bearer {token2}",
+            "X-Project": "test",
+        }
         files = {"file": ("data.csv", csv_data, "text/csv")}
         resp = await ac.post("/import", files=files, headers=headers2)
         assert resp.status_code == 200
