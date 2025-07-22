@@ -16,6 +16,7 @@ pytest_plugins = ["tests.test_api"]
 
 @pytest.mark.anyio("asyncio")
 async def test_export_import_roundtrip(async_client):
+    # Log in and set headers for project "1"
     login = await async_client.post(
         "/token",
         data={"username": "admin", "password": "secret"},
@@ -23,6 +24,7 @@ async def test_export_import_roundtrip(async_client):
     token = login.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}", "X-Project": "1"}
 
+    # Create a material and a component
     resp = await async_client.post(
         "/materials",
         json={"name": "Steel"},
@@ -36,10 +38,12 @@ async def test_export_import_roundtrip(async_client):
         headers=headers,
     )
 
+    # Export to CSV
     resp = await async_client.get("/export", headers=headers)
     assert resp.status_code == 200
     csv_data = resp.text
 
+    # Set up a fresh in-memory DB for import
     engine2 = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -54,10 +58,13 @@ async def test_export_import_roundtrip(async_client):
     TestingSessionLocal = sessionmaker(
         bind=engine2, autoflush=False, autocommit=False
     )
-    backend.engine = engine2
-    backend.SessionLocal = TestingSessionLocal
-    backend.PROJECT_DATABASES = {"1": TestingSessionLocal}
-    backend.on_startup()
+
+    # Initialize schema (add missing columns) and register under the same project key
+    backend.initialize_engine(engine2)
+    backend.ENGINES.clear()
+    backend.ENGINES["1"] = engine2
+
+    # Use a new client to perform the import
     transport = ASGITransport(app=backend.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         login2 = await ac.post(
@@ -66,13 +73,16 @@ async def test_export_import_roundtrip(async_client):
         )
         token2 = login2.json()["access_token"]
         headers2 = {"Authorization": f"Bearer {token2}", "X-Project": "1"}
+
         files = {"file": ("data.csv", csv_data, "text/csv")}
         resp = await ac.post("/import", files=files, headers=headers2)
         assert resp.status_code == 200
 
+        # Verify the data round-tripped correctly
         resp = await ac.get("/materials", headers=headers2)
         assert len(resp.json()) == 1
         resp = await ac.get("/components", headers=headers2)
         assert len(resp.json()) == 1
 
-    backend.PROJECT_DATABASES = {}
+    # Clean up
+    backend.ENGINES.clear()

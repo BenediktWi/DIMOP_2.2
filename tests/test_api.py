@@ -20,6 +20,7 @@ async def async_client():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+    # create minimal materials table
     with engine.connect() as conn:
         conn.execute(
             text(
@@ -29,15 +30,17 @@ async def async_client():
     TestingSessionLocal = sessionmaker(
         bind=engine, autoflush=False, autocommit=False
     )
-    backend.engine = engine
-    backend.SessionLocal = TestingSessionLocal
-    backend.PROJECT_DATABASES = {"1": TestingSessionLocal}
-    backend.on_startup()
+
+    # initialize schema and register test engine
+    backend.initialize_engine(engine)
+    backend.ENGINES.clear()
+    backend.ENGINES["1"] = engine
 
     transport = ASGITransport(app=backend.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
-    backend.PROJECT_DATABASES = {}
+
+    backend.ENGINES.clear()
 
 
 @pytest.fixture
@@ -47,6 +50,7 @@ async def async_client_missing_columns():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+    # create tables missing some component columns
     with engine.connect() as conn:
         conn.execute(
             text(
@@ -61,19 +65,22 @@ async def async_client_missing_columns():
     TestingSessionLocal = sessionmaker(
         bind=engine, autoflush=False, autocommit=False
     )
-    backend.engine = engine
-    backend.SessionLocal = TestingSessionLocal
-    backend.PROJECT_DATABASES = {"1": TestingSessionLocal}
-    backend.on_startup()
+
+    # initialize schema and register test engine
+    backend.initialize_engine(engine)
+    backend.ENGINES.clear()
+    backend.ENGINES["1"] = engine
+
     transport = ASGITransport(app=backend.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
-    backend.PROJECT_DATABASES = {}
+
+    backend.ENGINES.clear()
 
 
 @pytest.fixture
 async def async_client_projects():
-    """Client with two project databases."""
+    # two isolated in-memory databases
     engine1 = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -84,33 +91,27 @@ async def async_client_projects():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    for engine in (engine1, engine2):
-        with engine.connect() as conn:
+    # create minimal materials table for both
+    for eng in (engine1, engine2):
+        with eng.connect() as conn:
             conn.execute(
                 text(
                     "CREATE TABLE materials (id INTEGER PRIMARY KEY, name VARCHAR, description VARCHAR)"
                 )
             )
-    Session1 = sessionmaker(bind=engine1, autoflush=False, autocommit=False)
-    Session2 = sessionmaker(bind=engine2, autoflush=False, autocommit=False)
 
-    backend.engine = engine1
-    backend.SessionLocal = Session1
-    backend.PROJECT_DATABASES = {"1": Session1, "2": Session2}
-    backend.on_startup()
-
-    prev_engine = backend.engine
-    prev_session = backend.SessionLocal
-    backend.engine = engine2
-    backend.SessionLocal = Session2
-    backend.on_startup()
-    backend.engine = prev_engine
-    backend.SessionLocal = prev_session
+    # initialize schema and register both engines
+    backend.initialize_engine(engine1)
+    backend.initialize_engine(engine2)
+    backend.ENGINES.clear()
+    backend.ENGINES["1"] = engine1
+    backend.ENGINES["2"] = engine2
 
     transport = ASGITransport(app=backend.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
-    backend.PROJECT_DATABASES = {}
+
+    backend.ENGINES.clear()
 
 
 @pytest.mark.anyio("asyncio")
@@ -159,7 +160,7 @@ async def test_startup_adds_component_columns(async_client_missing_columns):
     data = resp.json()
     assert "level" in data
 
-    inspector = backend.inspect(backend.engine)
+    inspector = backend.inspect(backend.ENGINES["1"])
     cols = [c["name"] for c in inspector.get_columns("components")]
     assert "level" in cols
 
