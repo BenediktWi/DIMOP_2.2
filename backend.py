@@ -1,7 +1,15 @@
 from typing import Dict, List, Optional
 import csv
 import io
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Response
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    Depends,
+    UploadFile,
+    File,
+    Response,
+    Request,
+)
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from sqlalchemy import (
@@ -157,8 +165,30 @@ class SustainabilityRead(SustainabilityBase):
         orm_mode = True
 
 
-def get_db():
-    db = SessionLocal()
+# Mapping of project IDs to Session factories used for multi-project support
+PROJECT_DATABASES: Dict[str, sessionmaker] = {}
+
+
+def get_db(request: Request):
+    """Return a database session bound to the project specified by ``X-Project``."""
+
+    project_id = request.headers.get("X-Project")
+    if project_id:
+        SessionMaker = PROJECT_DATABASES.get(project_id)
+        if SessionMaker is None:
+            db_url = f"sqlite:///app_{project_id}.db"
+            engine_proj = create_engine(
+                db_url, connect_args={"check_same_thread": False}
+            )
+            SessionMaker = sessionmaker(
+                bind=engine_proj, autoflush=False, autocommit=False
+            )
+            Base.metadata.create_all(bind=engine_proj)
+            PROJECT_DATABASES[project_id] = SessionMaker
+    else:
+        SessionMaker = SessionLocal
+
+    db = SessionMaker()
     try:
         yield db
     finally:

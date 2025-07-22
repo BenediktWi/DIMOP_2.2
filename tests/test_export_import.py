@@ -21,7 +21,7 @@ async def test_export_import_roundtrip(async_client):
         data={"username": "admin", "password": "secret"},
     )
     token = login.json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = {"Authorization": f"Bearer {token}", "X-Project": "1"}
 
     resp = await async_client.post(
         "/materials",
@@ -56,16 +56,8 @@ async def test_export_import_roundtrip(async_client):
     )
     backend.engine = engine2
     backend.SessionLocal = TestingSessionLocal
+    backend.PROJECT_DATABASES = {"1": TestingSessionLocal}
     backend.on_startup()
-
-    def override_get_db():
-        db = TestingSessionLocal()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    backend.app.dependency_overrides[backend.get_db] = override_get_db
     transport = ASGITransport(app=backend.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         login2 = await ac.post(
@@ -73,7 +65,7 @@ async def test_export_import_roundtrip(async_client):
             data={"username": "admin", "password": "secret"},
         )
         token2 = login2.json()["access_token"]
-        headers2 = {"Authorization": f"Bearer {token2}"}
+        headers2 = {"Authorization": f"Bearer {token2}", "X-Project": "1"}
         files = {"file": ("data.csv", csv_data, "text/csv")}
         resp = await ac.post("/import", files=files, headers=headers2)
         assert resp.status_code == 200
@@ -83,4 +75,4 @@ async def test_export_import_roundtrip(async_client):
         resp = await ac.get("/components", headers=headers2)
         assert len(resp.json()) == 1
 
-    backend.app.dependency_overrides.clear()
+    backend.PROJECT_DATABASES = {}
