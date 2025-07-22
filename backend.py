@@ -1,7 +1,15 @@
 from typing import Dict, List, Optional
 import csv
 import io
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Response
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    Depends,
+    UploadFile,
+    File,
+    Response,
+    Header,
+)
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from sqlalchemy import (
@@ -15,6 +23,7 @@ from sqlalchemy import (
     inspect,
     text,
 )
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import (
     declarative_base,
     relationship,
@@ -24,14 +33,8 @@ from sqlalchemy.orm import (
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-DATABASE_URL = "sqlite:///app.db"
+ENGINES: Dict[str, Engine] = {}
 
-engine = create_engine(
-    DATABASE_URL, connect_args={"check_same_thread": False}
-)
-SessionLocal = sessionmaker(
-    bind=engine, autoflush=False, autocommit=False
-)
 Base = declarative_base()
 
 PROJECTS_DB_URL = "sqlite:///projects.db"
@@ -49,6 +52,47 @@ class Project(ProjectsBase):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
+
+
+def initialize_engine(engine: Engine) -> None:
+    inspector = inspect(engine)
+    # migrations for materials table
+    if "materials" in inspector.get_table_names():
+        cols = [c["name"] for c in inspector.get_columns("materials")]
+        if "co2_value" not in cols:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE materials ADD COLUMN co2_value FLOAT"))
+    # migrations for components table
+    if "components" in inspector.get_table_names():
+        cols = [c["name"] for c in inspector.get_columns("components")]
+        new_columns = [
+            ("level", "INTEGER"),
+            ("parent_id", "INTEGER"),
+            ("is_atomic", "BOOLEAN"),
+            ("weight", "FLOAT"),
+            ("reusable", "BOOLEAN"),
+            ("connection_type", "INTEGER"),
+        ]
+        for col_name, col_type in new_columns:
+            if col_name not in cols:
+                with engine.connect() as conn:
+                    conn.execute(
+                        text(f"ALTER TABLE components ADD COLUMN {col_name} {col_type}")
+                    )
+    # create any missing tables
+    Base.metadata.create_all(bind=engine)
+
+
+def get_engine(project_id: str) -> Engine:
+    engine = ENGINES.get(project_id)
+    if engine is None:
+        engine = create_engine(
+            f"sqlite:///app_{project_id}.db",
+            connect_args={"check_same_thread": False},
+        )
+        initialize_engine(engine)
+        ENGINES[project_id] = engine
+    return engine
 
 
 class Material(Base):
@@ -188,7 +232,11 @@ class SustainabilityRead(SustainabilityBase):
         orm_mode = True
 
 
-def get_db():
+def get_db(project_id: str = Header(..., alias="X-Project")):
+    engine = get_engine(project_id)
+    SessionLocal = sessionmaker(
+        bind=engine, autoflush=False, autocommit=False
+    )
     db = SessionLocal()
     try:
         yield db
@@ -253,34 +301,11 @@ app = FastAPI()
 
 
 @app.on_event("startup")
-def on_startup():
-    inspector = inspect(engine)
-    if "materials" in inspector.get_table_names():
-        cols = [c["name"] for c in inspector.get_columns("materials")]
-        if "co2_value" not in cols:
-            with engine.connect() as conn:
-                conn.execute(
-                    text("ALTER TABLE materials ADD COLUMN co2_value FLOAT")
-                )
-    if "components" in inspector.get_table_names():
-        cols = [c["name"] for c in inspector.get_columns("components")]
-        new_columns = [
-            ("level", "INTEGER"),
-            ("parent_id", "INTEGER"),
-            ("is_atomic", "BOOLEAN"),
-            ("weight", "FLOAT"),
-            ("reusable", "BOOLEAN"),
-            ("connection_type", "INTEGER"),
-        ]
-        for col_name, col_type in new_columns:
-            if col_name not in cols:
-                with engine.connect() as conn:
-                    conn.execute(
-                        text(
-                            f"ALTER TABLE components ADD COLUMN {col_name} {col_type}"
-                        )
-                    )
-    Base.metadata.create_all(bind=engine)
+def on_startup() -> None:
+    """Initialize the default project database and the projects listing database on startup."""
+    # ensure default project engine and its schema are initialized
+    get_engine("default")
+    # ensure the projects table exists
     ProjectsBase.metadata.create_all(bind=projects_engine)
 
 
@@ -316,12 +341,12 @@ def read_projects(
 
 
 # Material routes
-# TODO: use Depends(get_current_user) in each route to require authentication
 @app.post("/materials", response_model=MaterialRead)
 def create_material(
     material: MaterialCreate,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
+    _project_id: str = Header(..., alias="X-Project"),
 ):
     db_material = Material(**material.dict())
     db.add(db_material)
@@ -334,6 +359,7 @@ def create_material(
 def read_materials(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
+    _project_id: str = Header(..., alias="X-Project"),
 ):
     return db.query(Material).all()
 
@@ -343,28 +369,25 @@ def read_material(
     material_id: int,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
+    _project_id: str = Header(..., alias="X-Project"),
 ):
     material = db.get(Material, material_id)
     if not material:
-        raise HTTPException(
-            status_code=404,
-            detail="Material not found",
-        )
+        raise HTTPException(status_code=404, detail="Material not found")
     return material
 
 
 @app.put("/materials/{material_id}", response_model=MaterialRead)
 def update_material(
-    material_id: int, material_update: MaterialUpdate,
+    material_id: int,
+    material_update: MaterialUpdate,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
+    _project_id: str = Header(..., alias="X-Project"),
 ):
     material = db.get(Material, material_id)
     if not material:
-        raise HTTPException(
-            status_code=404,
-            detail="Material not found",
-        )
+        raise HTTPException(status_code=404, detail="Material not found")
     for key, value in material_update.dict(exclude_unset=True).items():
         setattr(material, key, value)
     db.commit()
@@ -377,39 +400,28 @@ def delete_material(
     material_id: int,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
+    _project_id: str = Header(..., alias="X-Project"),
 ):
     material = db.get(Material, material_id)
     if not material:
-        raise HTTPException(
-            status_code=404,
-            detail="Material not found",
-        )
+        raise HTTPException(status_code=404, detail="Material not found")
     db.delete(material)
     db.commit()
     return {"ok": True}
 
 
 # Component routes
-# TODO: secure these routes with Depends(get_current_user)
 @app.post("/components", response_model=ComponentRead)
 def create_component(
     component: ComponentCreate,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
+    _project_id: str = Header(..., alias="X-Project"),
 ):
     if not db.get(Material, component.material_id):
-        raise HTTPException(
-            status_code=400,
-            detail="Material does not exist",
-        )
-    if component.parent_id and not db.get(
-        Component,
-        component.parent_id,
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail="Parent component does not exist",
-        )
+        raise HTTPException(status_code=400, detail="Material does not exist")
+    if component.parent_id and not db.get(Component, component.parent_id):
+        raise HTTPException(status_code=400, detail="Parent component does not exist")
     db_component = Component(**component.dict())
     db.add(db_component)
     db.commit()
@@ -421,6 +433,7 @@ def create_component(
 def read_components(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
+    _project_id: str = Header(..., alias="X-Project"),
 ):
     return db.query(Component).all()
 
@@ -430,44 +443,29 @@ def read_component(
     component_id: int,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
+    _project_id: str = Header(..., alias="X-Project"),
 ):
     component = db.get(Component, component_id)
     if not component:
-        raise HTTPException(
-            status_code=404,
-            detail="Component not found",
-        )
+        raise HTTPException(status_code=404, detail="Component not found")
     return component
 
 
 @app.put("/components/{component_id}", response_model=ComponentRead)
 def update_component(
-    component_id: int, component_update: ComponentUpdate,
+    component_id: int,
+    component_update: ComponentUpdate,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
+    _project_id: str = Header(..., alias="X-Project"),
 ):
     component = db.get(Component, component_id)
     if not component:
-        raise HTTPException(
-            status_code=404,
-            detail="Component not found",
-        )
-    if component_update.material_id and not db.get(
-        Material,
-        component_update.material_id,
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail="Material does not exist",
-        )
-    if component_update.parent_id and not db.get(
-        Component,
-        component_update.parent_id,
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail="Parent component does not exist",
-        )
+        raise HTTPException(status_code=404, detail="Component not found")
+    if component_update.material_id and not db.get(Material, component_update.material_id):
+        raise HTTPException(status_code=400, detail="Material does not exist")
+    if component_update.parent_id and not db.get(Component, component_update.parent_id):
+        raise HTTPException(status_code=400, detail="Parent component does not exist")
     for key, value in component_update.dict(exclude_unset=True).items():
         setattr(component, key, value)
     db.commit()
@@ -477,158 +475,6 @@ def update_component(
 
 @app.delete("/components/{component_id}")
 def delete_component(
-    component_id: int,
+    component_id: int, 
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
-):
-    component = db.get(Component, component_id)
-    if not component:
-        raise HTTPException(
-            status_code=404,
-            detail="Component not found",
-        )
-    db.delete(component)
-    db.commit()
-    return {"ok": True}
-
-
-@app.post(
-    "/sustainability/calculate",
-    response_model=List[SustainabilityRead],
-)
-def calculate_sustainability(db: Session = Depends(get_db)):
-    results = []
-    cache: Dict[int, float] = {}
-    components = db.query(Component).all()
-    for comp in components:
-        score = compute_component_score(comp, db, cache)
-        record = (
-            db.query(Sustainability)
-            .filter(Sustainability.component_id == comp.id)
-            .first()
-        )
-        if record:
-            record.score = score
-            record.name = comp.name
-        else:
-            record = Sustainability(
-                component_id=comp.id,
-                name=comp.name,
-                score=score,
-            )
-            db.add(record)
-        db.commit()
-        db.refresh(record)
-        results.append(record)
-    return results
-
-
-@app.get("/sustainability", response_model=List[SustainabilityRead])
-def read_sustainability(db: Session = Depends(get_db)):
-    return db.query(Sustainability).all()
-
-
-@app.get("/export")
-def export_csv(
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
-):
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow([
-        "model",
-        "id",
-        "name",
-        "description",
-        "co2_value",
-        "material_id",
-        "level",
-        "parent_id",
-        "is_atomic",
-        "weight",
-        "reusable",
-        "connection_type",
-    ])
-    for mat in db.query(Material).all():
-        writer.writerow(
-            [
-                "material",
-                mat.id,
-                mat.name,
-                mat.description or "",
-                mat.co2_value if mat.co2_value is not None else "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-            ]
-        )
-    for comp in db.query(Component).all():
-        writer.writerow(
-            [
-                "component",
-                comp.id,
-                comp.name,
-                "",
-                "",
-                comp.material_id,
-                comp.level if comp.level is not None else "",
-                comp.parent_id if comp.parent_id is not None else "",
-                comp.is_atomic if comp.is_atomic is not None else "",
-                comp.weight if comp.weight is not None else "",
-                comp.reusable if comp.reusable is not None else "",
-                comp.connection_type if comp.connection_type is not None else "",
-            ]
-        )
-    output.seek(0)
-    return Response(output.getvalue(), media_type="text/csv")
-
-
-@app.post("/import")
-async def import_csv(
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
-):
-    content = await file.read()
-    reader = csv.DictReader(io.StringIO(content.decode()))
-    materials: List[Material] = []
-    components: List[Component] = []
-    for row in reader:
-        model = row.get("model")
-        if model == "material":
-            materials.append(
-                Material(
-                    id=int(row["id"]),
-                    name=row["name"],
-                    description=row.get("description") or None,
-                    co2_value=float(row["co2_value"]) if row.get("co2_value") else None,
-                )
-            )
-        elif model == "component":
-            components.append(
-                Component(
-                    id=int(row["id"]),
-                    name=row["name"],
-                    material_id=int(row.get("material_id")) if row.get("material_id") else None,
-                    level=int(row["level"]) if row.get("level") else None,
-                    parent_id=int(row["parent_id"]) if row.get("parent_id") else None,
-                    is_atomic=row.get("is_atomic", "").lower() == "true",
-                    weight=float(row["weight"]) if row.get("weight") else None,
-                    reusable=row.get("reusable", "").lower() == "true",
-                    connection_type=int(row["connection_type"]) if row.get("connection_type") else None,
-                )
-            )
-    for mat in materials:
-        db.merge(mat)
-    db.commit()
-    for comp in components:
-        db.merge(comp)
-    db.commit()
-    return {
-        "imported_materials": len(materials),
-        "imported_components": len(components),
-    }
+    current

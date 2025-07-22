@@ -20,6 +20,7 @@ async def async_client():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+    # prepare minimal schema
     with engine.connect() as conn:
         conn.execute(
             text(
@@ -34,38 +35,28 @@ async def async_client():
     TestingSessionLocal = sessionmaker(
         bind=engine, autoflush=False, autocommit=False
     )
-    backend.engine = engine
-    backend.SessionLocal = TestingSessionLocal
-    projects_engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    with projects_engine.connect() as conn:
-        conn.execute(
-            text(
-                "CREATE TABLE projects (id INTEGER PRIMARY KEY, name VARCHAR)"
-            )
-        )
-    ProjectsTestingSession = sessionmaker(
-        bind=projects_engine, autoflush=False, autocommit=False
-    )
-    backend.projects_engine = projects_engine
-    backend.ProjectsSessionLocal = ProjectsTestingSession
-    backend.on_startup()
 
-    def override_get_db():
+    # apply migrations & register test engine
+    backend.initialize_engine(engine)
+    backend.ENGINES["test"] = engine
+
+    from fastapi import Header
+
+    def override_get_db(project_id: str = Header("test", alias="X-Project")):
         db = TestingSessionLocal()
         try:
             yield db
         finally:
             db.close()
 
+    # override dependencies
     backend.app.dependency_overrides[backend.get_db] = override_get_db
     backend.app.dependency_overrides[backend.get_projects_db] = override_get_db
+
     transport = ASGITransport(app=backend.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+
     backend.app.dependency_overrides.clear()
 
 
@@ -76,6 +67,7 @@ async def async_client_missing_columns():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+    # prepare schema missing some component columns
     with engine.connect() as conn:
         conn.execute(
             text(
@@ -95,38 +87,28 @@ async def async_client_missing_columns():
     TestingSessionLocal = sessionmaker(
         bind=engine, autoflush=False, autocommit=False
     )
-    backend.engine = engine
-    backend.SessionLocal = TestingSessionLocal
-    projects_engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    with projects_engine.connect() as conn:
-        conn.execute(
-            text(
-                "CREATE TABLE projects (id INTEGER PRIMARY KEY, name VARCHAR)"
-            )
-        )
-    ProjectsTestingSession = sessionmaker(
-        bind=projects_engine, autoflush=False, autocommit=False
-    )
-    backend.projects_engine = projects_engine
-    backend.ProjectsSessionLocal = ProjectsTestingSession
-    backend.on_startup()
 
-    def override_get_db():
+    # apply migrations & register test engine
+    backend.initialize_engine(engine)
+    backend.ENGINES["test"] = engine
+
+    from fastapi import Header
+
+    def override_get_db(project_id: str = Header("test", alias="X-Project")):
         db = TestingSessionLocal()
         try:
             yield db
         finally:
             db.close()
 
+    # override dependencies
     backend.app.dependency_overrides[backend.get_db] = override_get_db
     backend.app.dependency_overrides[backend.get_projects_db] = override_get_db
+
     transport = ASGITransport(app=backend.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+
     backend.app.dependency_overrides.clear()
 
 
@@ -137,7 +119,10 @@ async def test_create_and_read_materials(async_client):
         data={"username": "admin", "password": "secret"},
     )
     token = login.json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "X-Project": "test",
+    }
 
     resp = await async_client.post(
         "/materials", json={"name": "Steel"}, headers=headers
@@ -160,7 +145,10 @@ async def test_startup_adds_component_columns(async_client_missing_columns):
         data={"username": "admin", "password": "secret"},
     )
     token = login.json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "X-Project": "test",
+    }
 
     resp = await async_client_missing_columns.post(
         "/materials", json={"name": "Steel"}, headers=headers
@@ -176,6 +164,6 @@ async def test_startup_adds_component_columns(async_client_missing_columns):
     data = resp.json()
     assert "level" in data
 
-    inspector = backend.inspect(backend.engine)
+    inspector = backend.inspect(backend.ENGINES["test"])
     cols = [c["name"] for c in inspector.get_columns("components")]
     assert "level" in cols
