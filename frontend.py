@@ -78,7 +78,10 @@ def build_graphviz_tree(items):
 
 
 st.title("DIMOP 2.2")
-page = st.sidebar.selectbox("Page", ["Materials", "Components"])
+page = st.sidebar.selectbox(
+    "Page",
+    ["Materials", "Components", "Export/Import"],
+)
 
 if page == "Materials":
     st.header("Create material")
@@ -345,3 +348,37 @@ elif page == "Components":
         st.header("Sustainability scores")
         for entry in st.session_state.sustainability:
             st.write(f"{entry['name']}: {entry['score']:.2f}")
+
+elif page == "Export/Import":
+    st.header("Export database")
+    if st.button("Download CSV"):
+        try:
+            res = requests.get(
+                f"{BACKEND_URL}/export",
+                headers=AUTH_HEADERS,
+            )
+            res.raise_for_status()
+            st.download_button(
+                "Save export.csv",
+                res.text,
+                file_name="export.csv",
+                mime="text/csv",
+            )
+            st.success("Export generated")
+        except Exception as e:
+            st.error(str(e))
+
+    st.header("Import database")
+    uploaded = st.file_uploader("CSV file", type="csv")
+    if uploaded and st.button("Upload"):
+        try:
+            files = {"file": (uploaded.name, uploaded.getvalue(), "text/csv")}
+            resp = requests.post(
+                f"{BACKEND_URL}/import",
+                files=files,
+                headers=AUTH_HEADERS,
+            )
+            resp.raise_for_status()
+            st.success("Import successful")
+        except Exception as e:
+            st.error(str(e))
