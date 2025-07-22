@@ -17,7 +17,11 @@ pip install -r requirements.txt
 
 ## Running the backend
 
-Start the API server with Uvicorn. The database `app.db` will be created automatically in the repository root. If an old `app.db` from a previous version exists, delete it or add the missing column as shown below; otherwise the API will fail with `no such column: materials.co2_value`.
+Start the API server with Uvicorn. Each project is stored in its own SQLite file
+inside the `projects` directory. A fresh install creates the default project at
+`projects/default.db`. If you upgraded from an earlier release that used a
+single `app.db` in the repository root, delete that file or migrate it as shown
+below; otherwise the API will fail with `no such column: materials.co2_value`.
 
 ```bash
 python -m uvicorn backend:app --reload
@@ -116,6 +120,24 @@ Two helper endpoints make it easy to backup the database contents.
   corresponding fields.
 - `POST /import` accepts an uploaded CSV (field name `file`) and recreates the
   records in the database.
+
+## Projects
+
+Every project has its own SQLite database under the `projects/` directory. The
+default project is stored as `projects/default.db`. New projects can be created
+with `POST /projects` and listed using `GET /projects`. Individual projects can
+be retrieved with `GET /projects/{project_id}`, updated via
+`PUT /projects/{project_id}`, and removed with
+`DELETE /projects/{project_id}`.
+
+### Using projects in the app
+
+1. Start the backend with `python -m uvicorn backend:app --reload`.
+2. Launch the Streamlit frontend with `streamlit run frontend.py`.
+3. Log in on the sidebar using the credentials `admin`/`secret`.
+4. Select the active project from the dropdown at the top of the interface.
+5. Create additional projects via the "New Project" option or the
+   `POST /projects` API endpoint.
 
 ## Future authentication integration
 
