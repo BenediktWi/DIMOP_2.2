@@ -26,11 +26,32 @@ async def async_client():
                 "CREATE TABLE materials (id INTEGER PRIMARY KEY, name VARCHAR, description VARCHAR)"
             )
         )
+        conn.execute(
+            text(
+                "CREATE TABLE projects (id INTEGER PRIMARY KEY, name VARCHAR)"
+            )
+        )
     TestingSessionLocal = sessionmaker(
         bind=engine, autoflush=False, autocommit=False
     )
     backend.engine = engine
     backend.SessionLocal = TestingSessionLocal
+    projects_engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with projects_engine.connect() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE projects (id INTEGER PRIMARY KEY, name VARCHAR)"
+            )
+        )
+    ProjectsTestingSession = sessionmaker(
+        bind=projects_engine, autoflush=False, autocommit=False
+    )
+    backend.projects_engine = projects_engine
+    backend.ProjectsSessionLocal = ProjectsTestingSession
     backend.on_startup()
 
     def override_get_db():
@@ -41,6 +62,7 @@ async def async_client():
             db.close()
 
     backend.app.dependency_overrides[backend.get_db] = override_get_db
+    backend.app.dependency_overrides[backend.get_projects_db] = override_get_db
     transport = ASGITransport(app=backend.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
@@ -65,11 +87,32 @@ async def async_client_missing_columns():
                 "CREATE TABLE components (id INTEGER PRIMARY KEY, name VARCHAR, material_id INTEGER)"
             )
         )
+        conn.execute(
+            text(
+                "CREATE TABLE projects (id INTEGER PRIMARY KEY, name VARCHAR)"
+            )
+        )
     TestingSessionLocal = sessionmaker(
         bind=engine, autoflush=False, autocommit=False
     )
     backend.engine = engine
     backend.SessionLocal = TestingSessionLocal
+    projects_engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with projects_engine.connect() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE projects (id INTEGER PRIMARY KEY, name VARCHAR)"
+            )
+        )
+    ProjectsTestingSession = sessionmaker(
+        bind=projects_engine, autoflush=False, autocommit=False
+    )
+    backend.projects_engine = projects_engine
+    backend.ProjectsSessionLocal = ProjectsTestingSession
     backend.on_startup()
 
     def override_get_db():
@@ -80,6 +123,7 @@ async def async_client_missing_columns():
             db.close()
 
     backend.app.dependency_overrides[backend.get_db] = override_get_db
+    backend.app.dependency_overrides[backend.get_projects_db] = override_get_db
     transport = ASGITransport(app=backend.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac

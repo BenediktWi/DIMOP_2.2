@@ -34,6 +34,22 @@ SessionLocal = sessionmaker(
 )
 Base = declarative_base()
 
+PROJECTS_DB_URL = "sqlite:///projects.db"
+projects_engine = create_engine(
+    PROJECTS_DB_URL, connect_args={"check_same_thread": False}
+)
+ProjectsSessionLocal = sessionmaker(
+    bind=projects_engine, autoflush=False, autocommit=False
+)
+ProjectsBase = declarative_base()
+
+
+class Project(ProjectsBase):
+    __tablename__ = "projects"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, nullable=False)
+
 
 class Material(Base):
     __tablename__ = "materials"
@@ -118,6 +134,21 @@ class MaterialRead(MaterialBase):
         orm_mode = True
 
 
+class ProjectBase(BaseModel):
+    name: str
+
+
+class ProjectCreate(ProjectBase):
+    pass
+
+
+class ProjectRead(ProjectBase):
+    id: int
+
+    class Config:
+        orm_mode = True
+
+
 class ComponentBase(BaseModel):
     name: str
     material_id: int
@@ -165,6 +196,14 @@ def get_db():
         db.close()
 
 
+def get_projects_db():
+    db = ProjectsSessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
 def compute_component_score(
     component: Component,
     db: Session,
@@ -194,6 +233,13 @@ def compute_component_score(
 
     cache[component.id] = score
     return score
+
+
+def init_project_db(project_id: int) -> None:
+    """Create a new database for the given project with the default schema."""
+    url = f"sqlite:///project_{project_id}.db"
+    proj_engine = create_engine(url, connect_args={"check_same_thread": False})
+    Base.metadata.create_all(bind=proj_engine)
 
 
 def get_current_user(token: str = Depends(oauth2_scheme)):
@@ -235,6 +281,7 @@ def on_startup():
                         )
                     )
     Base.metadata.create_all(bind=engine)
+    ProjectsBase.metadata.create_all(bind=projects_engine)
 
 
 @app.post("/token")
@@ -243,6 +290,29 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
     if form_data.username == "admin" and form_data.password == "secret":
         return {"access_token": "fake-super-secret-token", "token_type": "bearer"}
     raise HTTPException(status_code=400, detail="Invalid credentials")
+
+
+# Project routes
+@app.post("/projects", response_model=ProjectRead)
+def create_project(
+    project: ProjectCreate,
+    db: Session = Depends(get_projects_db),
+    current_user: dict = Depends(get_current_user),
+):
+    db_project = Project(**project.dict())
+    db.add(db_project)
+    db.commit()
+    db.refresh(db_project)
+    init_project_db(db_project.id)
+    return db_project
+
+
+@app.get("/projects", response_model=List[ProjectRead])
+def read_projects(
+    db: Session = Depends(get_projects_db),
+    current_user: dict = Depends(get_current_user),
+):
+    return db.query(Project).all()
 
 
 # Material routes
