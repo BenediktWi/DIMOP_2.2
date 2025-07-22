@@ -29,11 +29,12 @@ async def async_client():
     TestingSessionLocal = sessionmaker(
         bind=engine, autoflush=False, autocommit=False
     )
-    backend.engine = engine
-    backend.SessionLocal = TestingSessionLocal
-    backend.on_startup()
+    backend.initialize_engine(engine)
+    backend.ENGINES["test"] = engine
 
-    def override_get_db():
+    from fastapi import Header
+
+    def override_get_db(project_id: str = Header("test", alias="X-Project")):
         db = TestingSessionLocal()
         try:
             yield db
@@ -68,11 +69,12 @@ async def async_client_missing_columns():
     TestingSessionLocal = sessionmaker(
         bind=engine, autoflush=False, autocommit=False
     )
-    backend.engine = engine
-    backend.SessionLocal = TestingSessionLocal
-    backend.on_startup()
+    backend.initialize_engine(engine)
+    backend.ENGINES["test"] = engine
 
-    def override_get_db():
+    from fastapi import Header
+
+    def override_get_db(project_id: str = Header("test", alias="X-Project")):
         db = TestingSessionLocal()
         try:
             yield db
@@ -93,7 +95,10 @@ async def test_create_and_read_materials(async_client):
         data={"username": "admin", "password": "secret"},
     )
     token = login.json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "X-Project": "test",
+    }
 
     resp = await async_client.post(
         "/materials", json={"name": "Steel"}, headers=headers
@@ -116,7 +121,10 @@ async def test_startup_adds_component_columns(async_client_missing_columns):
         data={"username": "admin", "password": "secret"},
     )
     token = login.json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "X-Project": "test",
+    }
 
     resp = await async_client_missing_columns.post(
         "/materials", json={"name": "Steel"}, headers=headers
@@ -132,7 +140,7 @@ async def test_startup_adds_component_columns(async_client_missing_columns):
     data = resp.json()
     assert "level" in data
 
-    inspector = backend.inspect(backend.engine)
+    inspector = backend.inspect(backend.ENGINES["test"])
     cols = [c["name"] for c in inspector.get_columns("components")]
     assert "level" in cols
 
