@@ -96,6 +96,13 @@ class Sustainability(Base):
     component = relationship("Component")
 
 
+class Project(Base):
+    __tablename__ = "projects"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, nullable=False)
+
+
 # Pydantic schemas
 class MaterialBase(BaseModel):
     name: str
@@ -152,6 +159,14 @@ class SustainabilityBase(BaseModel):
 
 class SustainabilityRead(SustainabilityBase):
     id: int
+
+    class Config:
+        orm_mode = True
+
+
+class ProjectRead(BaseModel):
+    id: int
+    name: str
 
     class Config:
         orm_mode = True
@@ -243,6 +258,14 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
     if form_data.username == "admin" and form_data.password == "secret":
         return {"access_token": "fake-super-secret-token", "token_type": "bearer"}
     raise HTTPException(status_code=400, detail="Invalid credentials")
+
+
+@app.get("/projects", response_model=List[ProjectRead])
+def read_projects(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    return db.query(Project).all()
 
 
 # Material routes

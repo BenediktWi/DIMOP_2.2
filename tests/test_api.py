@@ -135,3 +135,17 @@ async def test_startup_adds_component_columns(async_client_missing_columns):
     inspector = backend.inspect(backend.engine)
     cols = [c["name"] for c in inspector.get_columns("components")]
     assert "level" in cols
+
+
+@pytest.mark.anyio("asyncio")
+async def test_projects_endpoint(async_client):
+    login = await async_client.post(
+        "/token",
+        data={"username": "admin", "password": "secret"},
+    )
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = await async_client.get("/projects", headers=headers)
+    assert resp.status_code == 200
+    assert resp.json() == []
