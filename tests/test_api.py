@@ -17,7 +17,7 @@ import pytest
 async def async_client():
     engine = create_engine(
         "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
+        connect_args={"check_same_thread": False, "foreign_keys": 1},
         poolclass=StaticPool,
     )
     with engine.connect() as conn:
@@ -51,7 +51,7 @@ async def async_client():
 async def async_client_full_schema():
     engine = create_engine(
         "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
+        connect_args={"check_same_thread": False, "foreign_keys": 1},
         poolclass=StaticPool,
     )
     TestingSessionLocal = sessionmaker(
@@ -79,7 +79,7 @@ async def async_client_full_schema():
 async def async_client_missing_columns():
     engine = create_engine(
         "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
+        connect_args={"check_same_thread": False, "foreign_keys": 1},
         poolclass=StaticPool,
     )
     with engine.connect() as conn:
@@ -217,3 +217,45 @@ async def test_duplicate_material_name_returns_400(async_client_full_schema):
     )
     assert second.status_code == 400
     assert second.json()["detail"] == "Material name already exists"
+
+
+@pytest.mark.anyio("asyncio")
+async def test_delete_material_cascades_components(async_client_full_schema):
+    login = await async_client_full_schema.post(
+        "/token",
+        data={"username": "admin", "password": "secret"},
+    )
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    proj_resp = await async_client_full_schema.post(
+        "/projects",
+        json={"name": "Proj"},
+        headers=headers,
+    )
+    project_id = proj_resp.json()["id"]
+
+    mat_resp = await async_client_full_schema.post(
+        "/materials",
+        json={"name": "Steel", "project_id": project_id},
+        headers=headers,
+    )
+    material_id = mat_resp.json()["id"]
+
+    await async_client_full_schema.post(
+        "/components",
+        json={"name": "Comp", "material_id": material_id, "project_id": project_id},
+        headers=headers,
+    )
+
+    # Delete using raw SQL to ensure DB-level cascading
+    with backend.engine.begin() as conn:
+        conn.execute(text("DELETE FROM materials WHERE id=:id"), {"id": material_id})
+
+    resp = await async_client_full_schema.get(
+        "/components",
+        params={"project_id": project_id},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json() == []
