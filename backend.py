@@ -35,6 +35,15 @@ SessionLocal = sessionmaker(
 Base = declarative_base()
 
 
+class Project(Base):
+    __tablename__ = "projects"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, nullable=False)
+    materials = relationship("Material", back_populates="project")
+    components = relationship("Component", back_populates="project")
+
+
 class Material(Base):
     __tablename__ = "materials"
 
@@ -42,6 +51,8 @@ class Material(Base):
     name = Column(String, unique=True, index=True, nullable=False)
     description = Column(String, nullable=True)
     co2_value = Column(Float, nullable=True)
+    project_id = Column(Integer, ForeignKey("projects.id"))
+    project = relationship("Project", back_populates="materials")
     components = relationship(
         "Component",
         back_populates="material",
@@ -64,6 +75,8 @@ class Component(Base):
     weight = Column(Float, nullable=True)
     reusable = Column(Boolean, default=False)
     connection_type = Column(Integer, nullable=True)
+    project_id = Column(Integer, ForeignKey("projects.id"))
+    project = relationship("Project", back_populates="components")
     material_id = Column(
         Integer,
         ForeignKey("materials.id", ondelete="CASCADE"),
@@ -103,19 +116,35 @@ class MaterialBase(BaseModel):
     co2_value: Optional[float] = None
 
 
-class MaterialCreate(MaterialBase):
+class ProjectBase(BaseModel):
+    name: str
+
+
+class ProjectCreate(ProjectBase):
     pass
 
 
-class MaterialUpdate(MaterialBase):
-    pass
-
-
-class MaterialRead(MaterialBase):
+class ProjectRead(ProjectBase):
     id: int
 
     class Config:
         orm_mode = True
+
+
+class MaterialCreate(MaterialBase):
+    project_id: int
+
+
+class MaterialUpdate(MaterialBase):
+    project_id: Optional[int] = None
+
+
+class MaterialRead(MaterialBase):
+    id: int
+    project_id: int
+
+class Config:
+    orm_mode = True
 
 
 class ComponentBase(BaseModel):
@@ -127,6 +156,7 @@ class ComponentBase(BaseModel):
     weight: Optional[float] = None
     reusable: Optional[bool] = None
     connection_type: Optional[int] = None
+    project_id: int
 
 
 class ComponentCreate(ComponentBase):
@@ -134,12 +164,12 @@ class ComponentCreate(ComponentBase):
 
 
 class ComponentUpdate(ComponentBase):
-    pass
+    project_id: Optional[int] = None
 
 
 class ComponentRead(ComponentBase):
     id: int
-
+    
     class Config:
         orm_mode = True
 
@@ -216,6 +246,11 @@ def on_startup():
                 conn.execute(
                     text("ALTER TABLE materials ADD COLUMN co2_value FLOAT")
                 )
+        if "project_id" not in cols:
+            with engine.connect() as conn:
+                conn.execute(
+                    text("ALTER TABLE materials ADD COLUMN project_id INTEGER")
+                )
     if "components" in inspector.get_table_names():
         cols = [c["name"] for c in inspector.get_columns("components")]
         new_columns = [
@@ -225,6 +260,7 @@ def on_startup():
             ("weight", "FLOAT"),
             ("reusable", "BOOLEAN"),
             ("connection_type", "INTEGER"),
+            ("project_id", "INTEGER"),
         ]
         for col_name, col_type in new_columns:
             if col_name not in cols:
@@ -245,6 +281,28 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
     raise HTTPException(status_code=400, detail="Invalid credentials")
 
 
+# Project routes
+@app.post("/projects", response_model=ProjectRead)
+def create_project(
+    project: ProjectCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    db_project = Project(**project.dict())
+    db.add(db_project)
+    db.commit()
+    db.refresh(db_project)
+    return db_project
+
+
+@app.get("/projects", response_model=List[ProjectRead])
+def read_projects(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    return db.query(Project).all()
+
+
 # Material routes
 # TODO: use Depends(get_current_user) in each route to require authentication
 @app.post("/materials", response_model=MaterialRead)
@@ -253,6 +311,8 @@ def create_material(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
+    if not db.get(Project, material.project_id):
+        raise HTTPException(status_code=400, detail="Project does not exist")
     db_material = Material(**material.dict())
     db.add(db_material)
     db.commit()
@@ -262,39 +322,36 @@ def create_material(
 
 @app.get("/materials", response_model=List[MaterialRead])
 def read_materials(
+    project_id: int,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    return db.query(Material).all()
+    return db.query(Material).filter(Material.project_id == project_id).all()
 
 
 @app.get("/materials/{material_id}", response_model=MaterialRead)
 def read_material(
     material_id: int,
+    project_id: int,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     material = db.get(Material, material_id)
-    if not material:
-        raise HTTPException(
-            status_code=404,
-            detail="Material not found",
-        )
+    if not material or material.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Material not found")
     return material
 
 
 @app.put("/materials/{material_id}", response_model=MaterialRead)
 def update_material(
     material_id: int, material_update: MaterialUpdate,
+    project_id: int,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     material = db.get(Material, material_id)
-    if not material:
-        raise HTTPException(
-            status_code=404,
-            detail="Material not found",
-        )
+    if not material or material.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Material not found")
     for key, value in material_update.dict(exclude_unset=True).items():
         setattr(material, key, value)
     db.commit()
@@ -305,15 +362,13 @@ def update_material(
 @app.delete("/materials/{material_id}")
 def delete_material(
     material_id: int,
+    project_id: int,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     material = db.get(Material, material_id)
-    if not material:
-        raise HTTPException(
-            status_code=404,
-            detail="Material not found",
-        )
+    if not material or material.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Material not found")
     db.delete(material)
     db.commit()
     return {"ok": True}
@@ -327,6 +382,8 @@ def create_component(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
+    if not db.get(Project, component.project_id):
+        raise HTTPException(status_code=400, detail="Project does not exist")
     if not db.get(Material, component.material_id):
         raise HTTPException(
             status_code=400,
@@ -349,39 +406,36 @@ def create_component(
 
 @app.get("/components", response_model=List[ComponentRead])
 def read_components(
+    project_id: int,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    return db.query(Component).all()
+    return db.query(Component).filter(Component.project_id == project_id).all()
 
 
 @app.get("/components/{component_id}", response_model=ComponentRead)
 def read_component(
     component_id: int,
+    project_id: int,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     component = db.get(Component, component_id)
-    if not component:
-        raise HTTPException(
-            status_code=404,
-            detail="Component not found",
-        )
+    if not component or component.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Component not found")
     return component
 
 
 @app.put("/components/{component_id}", response_model=ComponentRead)
 def update_component(
     component_id: int, component_update: ComponentUpdate,
+    project_id: int,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     component = db.get(Component, component_id)
-    if not component:
-        raise HTTPException(
-            status_code=404,
-            detail="Component not found",
-        )
+    if not component or component.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Component not found")
     if component_update.material_id and not db.get(
         Material,
         component_update.material_id,
@@ -408,15 +462,13 @@ def update_component(
 @app.delete("/components/{component_id}")
 def delete_component(
     component_id: int,
+    project_id: int,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     component = db.get(Component, component_id)
-    if not component:
-        raise HTTPException(
-            status_code=404,
-            detail="Component not found",
-        )
+    if not component or component.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Component not found")
     db.delete(component)
     db.commit()
     return {"ok": True}
@@ -426,10 +478,13 @@ def delete_component(
     "/sustainability/calculate",
     response_model=List[SustainabilityRead],
 )
-def calculate_sustainability(db: Session = Depends(get_db)):
+def calculate_sustainability(
+    project_id: int,
+    db: Session = Depends(get_db),
+):
     results = []
     cache: Dict[int, float] = {}
-    components = db.query(Component).all()
+    components = db.query(Component).filter(Component.project_id == project_id).all()
     for comp in components:
         score = compute_component_score(comp, db, cache)
         record = (
@@ -454,12 +509,21 @@ def calculate_sustainability(db: Session = Depends(get_db)):
 
 
 @app.get("/sustainability", response_model=List[SustainabilityRead])
-def read_sustainability(db: Session = Depends(get_db)):
-    return db.query(Sustainability).all()
+def read_sustainability(
+    project_id: int,
+    db: Session = Depends(get_db),
+):
+    return (
+        db.query(Sustainability)
+        .join(Component)
+        .filter(Component.project_id == project_id)
+        .all()
+    )
 
 
 @app.get("/export")
 def export_csv(
+    project_id: int,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -471,6 +535,7 @@ def export_csv(
         "name",
         "description",
         "co2_value",
+        "project_id",
         "material_id",
         "level",
         "parent_id",
@@ -479,7 +544,7 @@ def export_csv(
         "reusable",
         "connection_type",
     ])
-    for mat in db.query(Material).all():
+    for mat in db.query(Material).filter(Material.project_id == project_id).all():
         writer.writerow(
             [
                 "material",
@@ -487,6 +552,7 @@ def export_csv(
                 mat.name,
                 mat.description or "",
                 mat.co2_value if mat.co2_value is not None else "",
+                mat.project_id,
                 "",
                 "",
                 "",
@@ -496,7 +562,7 @@ def export_csv(
                 "",
             ]
         )
-    for comp in db.query(Component).all():
+    for comp in db.query(Component).filter(Component.project_id == project_id).all():
         writer.writerow(
             [
                 "component",
@@ -504,6 +570,7 @@ def export_csv(
                 comp.name,
                 "",
                 "",
+                comp.project_id,
                 comp.material_id,
                 comp.level if comp.level is not None else "",
                 comp.parent_id if comp.parent_id is not None else "",
@@ -536,6 +603,7 @@ async def import_csv(
                     name=row["name"],
                     description=row.get("description") or None,
                     co2_value=float(row["co2_value"]) if row.get("co2_value") else None,
+                    project_id=int(row.get("project_id")) if row.get("project_id") else None,
                 )
             )
         elif model == "component":
@@ -543,6 +611,7 @@ async def import_csv(
                 Component(
                     id=int(row["id"]),
                     name=row["name"],
+                    project_id=int(row.get("project_id")) if row.get("project_id") else None,
                     material_id=int(row.get("material_id")) if row.get("material_id") else None,
                     level=int(row["level"]) if row.get("level") else None,
                     parent_id=int(row["parent_id"]) if row.get("parent_id") else None,

@@ -95,14 +95,25 @@ async def test_create_and_read_materials(async_client):
     token = login.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
+    proj_resp = await async_client.post(
+        "/projects", json={"name": "Proj"}, headers=headers
+    )
+    project_id = proj_resp.json()["id"]
+
     resp = await async_client.post(
-        "/materials", json={"name": "Steel"}, headers=headers
+        "/materials",
+        json={"name": "Steel", "project_id": project_id},
+        headers=headers,
     )
     assert resp.status_code == 200
     data = resp.json()
     assert data["name"] == "Steel"
 
-    resp = await async_client.get("/materials", headers=headers)
+    resp = await async_client.get(
+        "/materials",
+        params={"project_id": project_id},
+        headers=headers,
+    )
     assert resp.status_code == 200
     items = resp.json()
     assert len(items) == 1
@@ -118,14 +129,25 @@ async def test_startup_adds_component_columns(async_client_missing_columns):
     token = login.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
+    proj_resp = await async_client_missing_columns.post(
+        "/projects", json={"name": "Proj"}, headers=headers
+    )
+    project_id = proj_resp.json()["id"]
+
     resp = await async_client_missing_columns.post(
-        "/materials", json={"name": "Steel"}, headers=headers
+        "/materials",
+        json={"name": "Steel", "project_id": project_id},
+        headers=headers,
     )
     material_id = resp.json()["id"]
 
     resp = await async_client_missing_columns.post(
         "/components",
-        json={"name": "Root", "material_id": material_id},
+        json={
+            "name": "Root",
+            "material_id": material_id,
+            "project_id": project_id,
+        },
         headers=headers,
     )
     assert resp.status_code == 200
