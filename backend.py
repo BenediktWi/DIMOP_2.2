@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional
 import csv
 import io
+import sqlite3
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Response
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
@@ -27,8 +28,22 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 DATABASE_URL = "sqlite:///app.db"
 
+_real_sqlite_connect = sqlite3.connect
+
+
+def _sqlite_connect(*args, **kwargs):
+    fk = kwargs.pop("foreign_keys", None)
+    conn = _real_sqlite_connect(*args, **kwargs)
+    if fk:
+        conn.execute("PRAGMA foreign_keys=ON")
+    return conn
+
+sqlite3.connect = _sqlite_connect
+sqlite3.dbapi2.connect = _sqlite_connect
+
 engine = create_engine(
-    DATABASE_URL, connect_args={"check_same_thread": False}
+    DATABASE_URL,
+    connect_args={"check_same_thread": False, "foreign_keys": 1},
 )
 SessionLocal = sessionmaker(
     bind=engine, autoflush=False, autocommit=False
@@ -238,6 +253,8 @@ app = FastAPI()
 
 @app.on_event("startup")
 def on_startup():
+    with engine.connect() as conn:
+        conn.execute(text("PRAGMA foreign_keys=ON"))
     inspector = inspect(engine)
     if "materials" in inspector.get_table_names():
         cols = [c["name"] for c in inspector.get_columns("materials")]

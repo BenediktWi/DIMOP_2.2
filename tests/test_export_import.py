@@ -53,7 +53,7 @@ async def test_export_import_roundtrip(async_client):
 
     engine2 = create_engine(
         "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
+        connect_args={"check_same_thread": False, "foreign_keys": 1},
         poolclass=StaticPool,
     )
     with engine2.connect() as conn:
@@ -85,6 +85,11 @@ async def test_export_import_roundtrip(async_client):
         )
         token2 = login2.json()["access_token"]
         headers2 = {"Authorization": f"Bearer {token2}"}
+        await ac.post(
+            "/projects",
+            json={"name": "Proj"},
+            headers=headers2,
+        )
         files = {"file": ("data.csv", csv_data, "text/csv")}
         resp = await ac.post("/import", files=files, headers=headers2)
         assert resp.status_code == 200
