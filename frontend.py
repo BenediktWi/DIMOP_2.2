@@ -4,6 +4,14 @@ from streamlit.errors import StreamlitAPIException
 from graphviz import Digraph
 import requests
 
+
+def rerun():
+    """Compatibility wrapper for Streamlit rerun."""
+    if hasattr(st, "experimental_rerun"):
+        st.experimental_rerun()
+    else:
+        st.rerun()
+
 # Fallback-Logik für BACKEND_URL: zuerst st.secrets, dann ENV, sonst Default
 DEFAULT_BACKEND_URL = "http://localhost:8000"
 try:
@@ -82,7 +90,7 @@ if not auth_token:
                 )
                 res.raise_for_status()
                 st.session_state.token = res.json().get("access_token")
-                st.experimental_rerun()
+                rerun()
             except Exception:
                 st.error("Login failed")
 else:
@@ -115,12 +123,12 @@ else:
             if res.ok:
                 st.success("Project created")
                 st.session_state.project_id = res.json()["id"]
-                st.experimental_rerun()
+                rerun()
             else:
                 st.error(res.text)
     if st.sidebar.button("Logout"):
         del st.session_state["token"]
-        st.experimental_rerun()
+        rerun()
 
 
 st.title("DIMOP 2.2")
@@ -194,7 +202,7 @@ if page == "Materials":
                 params={"project_id": st.session_state.get("project_id")},
                 headers=AUTH_HEADERS,
             )
-            st.experimental_rerun()
+            rerun()
 
 elif page == "Components":
     materials = get_materials()
@@ -348,7 +356,7 @@ elif page == "Components":
                 params={"project_id": st.session_state.get("project_id")},
                 headers=AUTH_HEADERS,
             )
-            st.experimental_rerun()
+            rerun()
 
     def build_tree(items):
         comp_map = {c['id']: {**c, 'children': []} for c in items}
@@ -392,10 +400,10 @@ elif page == "Components":
                     st.session_state.sustainability = []
                     st.error(str(e))
                 st.session_state.show_finish = False
-                st.experimental_rerun()
+                rerun()
             if col2.button("Abbrechen"):
                 st.session_state.show_finish = False
-                st.experimental_rerun()
+                rerun()
 
     if st.session_state.get("sustainability"):
         st.header("Sustainability scores")
