@@ -68,6 +68,10 @@ ways:
 The components page also displays a Graphviz diagram of the component hierarchy.
 This requires the `graphviz` Python package from `requirements.txt`.
 
+Requests for materials and components are only made once a project is
+selected. If an API call fails, the backend's error text is displayed in the
+Streamlit UI.
+
 ## Packaging with PyInstaller
 
 You can create a standalone executable of either entry point using
