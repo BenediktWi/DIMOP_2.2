@@ -5,12 +5,17 @@ from graphviz import Digraph
 import requests
 
 
-def rerun():
-    """Compatibility wrapper for Streamlit rerun."""
+def do_rerun():
+    """Compatibility helper for Streamlit rerun."""
     if hasattr(st, "experimental_rerun"):
         st.experimental_rerun()
-    else:
+    elif hasattr(st, "rerun"):
         st.rerun()
+
+
+def rerun():
+    """Backward compatible wrapper."""
+    do_rerun()
 
 # Fallback-Logik für BACKEND_URL: zuerst st.secrets, dann ENV, sonst Default
 DEFAULT_BACKEND_URL = "http://localhost:8000"
