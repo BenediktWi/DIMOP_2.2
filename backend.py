@@ -198,7 +198,6 @@ def get_db():
 
 def compute_component_score(
     component: Component,
-    db: Session,
     cache: Dict[int, float] | None = None,
 ) -> float:
     if cache is None:
@@ -212,7 +211,7 @@ def compute_component_score(
         score = weight * material_co2
     else:
         child_scores = [
-            compute_component_score(child, db, cache)
+            compute_component_score(child, cache)
             for child in component.children
         ]
         children_sum = sum(child_scores)
@@ -493,7 +492,7 @@ def calculate_sustainability(
     cache: Dict[int, float] = {}
     components = db.query(Component).filter(Component.project_id == project_id).all()
     for comp in components:
-        score = compute_component_score(comp, db, cache)
+        score = compute_component_score(comp, cache)
         record = (
             db.query(Sustainability)
             .filter(Sustainability.component_id == comp.id)
