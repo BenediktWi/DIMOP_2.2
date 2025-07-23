@@ -21,6 +21,7 @@ from sqlalchemy.orm import (
     sessionmaker,
     Session,
 )
+from sqlalchemy.exc import IntegrityError
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -315,7 +316,13 @@ def create_material(
         raise HTTPException(status_code=400, detail="Project does not exist")
     db_material = Material(**material.dict())
     db.add(db_material)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=400, detail="Material name already exists"
+        )
     db.refresh(db_material)
     return db_material
 

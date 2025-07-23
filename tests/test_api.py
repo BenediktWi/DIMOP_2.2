@@ -48,6 +48,34 @@ async def async_client():
 
 
 @pytest.fixture
+async def async_client_full_schema():
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(
+        bind=engine, autoflush=False, autocommit=False
+    )
+    backend.engine = engine
+    backend.SessionLocal = TestingSessionLocal
+    backend.on_startup()
+
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    backend.app.dependency_overrides[backend.get_db] = override_get_db
+    transport = ASGITransport(app=backend.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+    backend.app.dependency_overrides.clear()
+
+
+@pytest.fixture
 async def async_client_missing_columns():
     engine = create_engine(
         "sqlite:///:memory:",
@@ -157,3 +185,35 @@ async def test_startup_adds_component_columns(async_client_missing_columns):
     inspector = backend.inspect(backend.engine)
     cols = [c["name"] for c in inspector.get_columns("components")]
     assert "level" in cols
+
+
+@pytest.mark.anyio("asyncio")
+async def test_duplicate_material_name_returns_400(async_client_full_schema):
+    login = await async_client_full_schema.post(
+        "/token",
+        data={"username": "admin", "password": "secret"},
+    )
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    proj_resp = await async_client_full_schema.post(
+        "/projects",
+        json={"name": "Proj"},
+        headers=headers,
+    )
+    project_id = proj_resp.json()["id"]
+
+    first = await async_client_full_schema.post(
+        "/materials",
+        json={"name": "Steel", "project_id": project_id},
+        headers=headers,
+    )
+    assert first.status_code == 200
+
+    second = await async_client_full_schema.post(
+        "/materials",
+        json={"name": "Steel", "project_id": project_id},
+        headers=headers,
+    )
+    assert second.status_code == 400
+    assert second.json()["detail"] == "Material name already exists"
