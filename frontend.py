@@ -11,6 +11,61 @@ try:
 except (FileNotFoundError, KeyError, StreamlitAPIException):
     BACKEND_URL = os.getenv("BACKEND_URL", DEFAULT_BACKEND_URL)
 
+
+AUTH_HEADERS = {}
+
+
+def get_materials():
+    try:
+        r = requests.get(
+            f"{BACKEND_URL}/materials",
+            params={"project_id": st.session_state.get("project_id")},
+            headers=AUTH_HEADERS,
+        )
+        r.raise_for_status()
+        return r.json()
+    except Exception:
+        return []
+
+
+def get_components():
+    try:
+        r = requests.get(
+            f"{BACKEND_URL}/components",
+            params={"project_id": st.session_state.get("project_id")},
+            headers=AUTH_HEADERS,
+        )
+        r.raise_for_status()
+        return r.json()
+    except Exception:
+        return []
+
+
+def get_projects():
+    try:
+        r = requests.get(
+            f"{BACKEND_URL}/projects",
+            headers=AUTH_HEADERS,
+        )
+        r.raise_for_status()
+        return r.json()
+    except Exception:
+        return []
+
+
+def build_graphviz_tree(items):
+    dot = Digraph()
+    for comp in items:
+        label = f"{comp['name']}\nLevel {comp.get('level', '')}"
+        dot.node(str(comp['id']), label)
+    for comp in items:
+        parent = comp.get('parent_id')
+        if parent:
+            dot.edge(str(parent), str(comp['id']))
+    return dot
+
+
+
 auth_token = st.session_state.get("token")
 
 if not auth_token:
@@ -32,49 +87,40 @@ if not auth_token:
                 st.error("Login failed")
 else:
     st.sidebar.write("Logged in")
+    AUTH_HEADERS = {
+        "Authorization": f"Bearer {st.session_state['token']}"
+    }
+    projects = get_projects()
+    if projects:
+        proj_options = {f"{p['name']} (id:{p['id']})": p['id'] for p in projects}
+        if "project_id" not in st.session_state:
+            st.session_state.project_id = next(iter(proj_options.values()))
+        selected = st.sidebar.selectbox(
+            "Project",
+            list(proj_options.keys()),
+            index=list(proj_options.values()).index(st.session_state.project_id),
+        )
+        st.session_state.project_id = proj_options[selected]
+    else:
+        st.sidebar.write("No projects available")
+    with st.sidebar.form("create_project"):
+        new_proj = st.text_input("New project name")
+        created = st.form_submit_button("Add Project")
+        if created and new_proj:
+            res = requests.post(
+                f"{BACKEND_URL}/projects",
+                json={"name": new_proj},
+                headers=AUTH_HEADERS,
+            )
+            if res.ok:
+                st.success("Project created")
+                st.session_state.project_id = res.json()["id"]
+                st.experimental_rerun()
+            else:
+                st.error(res.text)
     if st.sidebar.button("Logout"):
         del st.session_state["token"]
         st.experimental_rerun()
-
-AUTH_HEADERS = {
-    "Authorization": f"Bearer {st.session_state['token']}"
-} if st.session_state.get("token") else {}
-
-
-def get_materials():
-    try:
-        r = requests.get(
-            f"{BACKEND_URL}/materials",
-            headers=AUTH_HEADERS,
-        )
-        r.raise_for_status()
-        return r.json()
-    except Exception:
-        return []
-
-
-def get_components():
-    try:
-        r = requests.get(
-            f"{BACKEND_URL}/components",
-            headers=AUTH_HEADERS,
-        )
-        r.raise_for_status()
-        return r.json()
-    except Exception:
-        return []
-
-
-def build_graphviz_tree(items):
-    dot = Digraph()
-    for comp in items:
-        label = f"{comp['name']}\nLevel {comp.get('level', '')}"
-        dot.node(str(comp['id']), label)
-    for comp in items:
-        parent = comp.get('parent_id')
-        if parent:
-            dot.edge(str(parent), str(comp['id']))
-    return dot
 
 
 st.title("DIMOP 2.2")
@@ -97,6 +143,7 @@ if page == "Materials":
                     "name": name,
                     "description": description,
                     "co2_value": co2_value,
+                    "project_id": st.session_state.get("project_id"),
                 },
                 headers=AUTH_HEADERS,
             )
@@ -126,6 +173,7 @@ if page == "Materials":
                         "name": up_name,
                         "description": up_desc,
                         "co2_value": up_co2,
+                        "project_id": st.session_state.get("project_id"),
                     },
                     headers=AUTH_HEADERS,
                 )
@@ -143,6 +191,7 @@ if page == "Materials":
         if col2.button("Delete", key=f"del_mat_{m['id']}"):
             requests.delete(
                 f"{BACKEND_URL}/materials/{m['id']}",
+                params={"project_id": st.session_state.get("project_id")},
                 headers=AUTH_HEADERS,
             )
             st.experimental_rerun()
@@ -179,6 +228,7 @@ elif page == "Components":
                 f"{BACKEND_URL}/components",
                 json={
                     "name": name,
+                    "project_id": st.session_state.get("project_id"),
                     "material_id": mat_dict[mat_name],
                     "level": level,
                     "parent_id": parent_map[parent_sel],
@@ -266,6 +316,7 @@ elif page == "Components":
                     f"{BACKEND_URL}/components/{comp['id']}",
                     json={
                         "name": up_name,
+                        "project_id": st.session_state.get("project_id"),
                         "material_id": mat_dict.get(up_mat),
                         "level": up_level,
                         "parent_id": parent_map[up_parent],
@@ -294,6 +345,7 @@ elif page == "Components":
         if col2.button("Delete", key=f"del_comp_{c['id']}"):
             requests.delete(
                 f"{BACKEND_URL}/components/{c['id']}",
+                params={"project_id": st.session_state.get("project_id")},
                 headers=AUTH_HEADERS,
             )
             st.experimental_rerun()
@@ -331,7 +383,8 @@ elif page == "Components":
             if col1.button("Ja, berechnen"):
                 try:
                     res = requests.post(
-                        f"{BACKEND_URL}/sustainability/calculate"
+                        f"{BACKEND_URL}/sustainability/calculate",
+                        params={"project_id": st.session_state.get("project_id")},
                     )
                     res.raise_for_status()
                     st.session_state.sustainability = res.json()
@@ -355,6 +408,7 @@ elif page == "Export/Import":
         try:
             res = requests.get(
                 f"{BACKEND_URL}/export",
+                params={"project_id": st.session_state.get("project_id")},
                 headers=AUTH_HEADERS,
             )
             res.raise_for_status()
@@ -376,6 +430,7 @@ elif page == "Export/Import":
             resp = requests.post(
                 f"{BACKEND_URL}/import",
                 files=files,
+                params={"project_id": st.session_state.get("project_id")},
                 headers=AUTH_HEADERS,
             )
             resp.raise_for_status()
