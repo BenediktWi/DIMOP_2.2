@@ -24,29 +24,39 @@ AUTH_HEADERS = {}
 
 
 def get_materials():
+    project_id = st.session_state.get("project_id")
+    if not project_id:
+        return []
     try:
         r = requests.get(
             f"{BACKEND_URL}/materials",
-            params={"project_id": st.session_state.get("project_id")},
+            params={"project_id": project_id},
             headers=AUTH_HEADERS,
         )
-        r.raise_for_status()
-        return r.json()
-    except Exception:
-        return []
+        if r.ok:
+            return r.json()
+        st.error(r.text)
+    except Exception as e:
+        st.error(str(e))
+    return []
 
 
 def get_components():
+    project_id = st.session_state.get("project_id")
+    if not project_id:
+        return []
     try:
         r = requests.get(
             f"{BACKEND_URL}/components",
-            params={"project_id": st.session_state.get("project_id")},
+            params={"project_id": project_id},
             headers=AUTH_HEADERS,
         )
-        r.raise_for_status()
-        return r.json()
-    except Exception:
-        return []
+        if r.ok:
+            return r.json()
+        st.error(r.text)
+    except Exception as e:
+        st.error(str(e))
+    return []
 
 
 def get_projects():
