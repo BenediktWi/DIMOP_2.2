@@ -26,7 +26,17 @@ if not auth_token:
                     data={"username": username, "password": password},
                 )
                 res.raise_for_status()
-                st.session_state.token = res.json().get("access_token")
+                token = res.json().get("access_token")
+                st.session_state.token = token
+                try:
+                    proj = requests.get(
+                        f"{BACKEND_URL}/projects",
+                        headers={"Authorization": f"Bearer {token}"},
+                    )
+                    proj.raise_for_status()
+                    st.session_state.projects = proj.json()
+                except Exception:
+                    st.session_state.projects = []
                 st.experimental_rerun()
             except Exception:
                 st.error("Login failed")
@@ -34,11 +44,15 @@ else:
     st.sidebar.write("Logged in")
     if st.sidebar.button("Logout"):
         del st.session_state["token"]
+        st.session_state.pop("project", None)
+        st.session_state.pop("projects", None)
         st.experimental_rerun()
 
-AUTH_HEADERS = {
-    "Authorization": f"Bearer {st.session_state['token']}"
-} if st.session_state.get("token") else {}
+AUTH_HEADERS = {}
+if st.session_state.get("token"):
+    AUTH_HEADERS["Authorization"] = f"Bearer {st.session_state['token']}"
+if st.session_state.get("project"):
+    AUTH_HEADERS["X-Project"] = str(st.session_state["project"])
 
 
 def get_materials():
@@ -65,6 +79,18 @@ def get_components():
         return []
 
 
+def get_projects():
+    try:
+        r = requests.get(
+            f"{BACKEND_URL}/projects",
+            headers=AUTH_HEADERS,
+        )
+        r.raise_for_status()
+        return r.json()
+    except Exception:
+        return []
+
+
 def build_graphviz_tree(items):
     dot = Digraph()
     for comp in items:
@@ -78,12 +104,30 @@ def build_graphviz_tree(items):
 
 
 st.title("DIMOP 2.2")
-page = st.sidebar.selectbox(
-    "Page",
-    ["Materials", "Components", "Export/Import"],
-)
+if st.session_state.get("project"):
+    page = st.sidebar.selectbox(
+        "Page",
+        ["Project Manager", "Materials", "Components", "Export/Import"],
+    )
+else:
+    page = "Project Manager"
 
-if page == "Materials":
+if page == "Project Manager":
+    st.header("Project Manager")
+    projects = st.session_state.get("projects")
+    if projects is None:
+        projects = get_projects()
+        st.session_state.projects = projects
+    if projects:
+        proj_map = {f"{p['name']} (id:{p['id']})": p['id'] for p in projects}
+        selection = st.selectbox("Available projects", list(proj_map.keys()))
+        if st.button("Select project"):
+            st.session_state.project = proj_map[selection]
+            st.experimental_rerun()
+    else:
+        st.info("No projects available")
+
+elif page == "Materials":
     st.header("Create material")
     with st.form("create_material"):
         name = st.text_input("Name")
