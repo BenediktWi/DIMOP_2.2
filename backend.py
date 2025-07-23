@@ -4,6 +4,7 @@ import io
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Response
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
+from sqlmodel import SQLModel
 from sqlalchemy import (
     create_engine,
     Column,
@@ -21,6 +22,7 @@ from sqlalchemy.orm import (
     sessionmaker,
     Session,
 )
+from sqlalchemy.exc import IntegrityError
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -185,11 +187,12 @@ class ProjectCreate(ProjectBase):
     pass
 
 
-class ProjectRead(ProjectBase):
+class ProjectRead(SQLModel):
     id: int
+    name: str
+    description: Optional[str] = None
 
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 
 
 class ProjectList(ProjectRead):
@@ -314,7 +317,16 @@ def create_project(
 ):
     db_proj = Project(**project.dict())
     db.add(db_proj)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if "UNIQUE constraint failed: projects.name" in str(exc.orig):
+            raise HTTPException(
+                status_code=400,
+                detail="Project name must be unique",
+            )
+        raise
     db.refresh(db_proj)
     return db_proj
 
