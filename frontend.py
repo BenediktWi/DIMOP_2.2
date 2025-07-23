@@ -40,13 +40,46 @@ AUTH_HEADERS = {
     "Authorization": f"Bearer {st.session_state['token']}"
 } if st.session_state.get("token") else {}
 
+projects = []
+project_map: dict[str, int] = {}
+if st.session_state.get("token"):
+    try:
+        resp = requests.get(f"{BACKEND_URL}/projects", headers=AUTH_HEADERS)
+        resp.raise_for_status()
+        projects = resp.json()
+        project_map = {p["name"]: p["id"] for p in projects}
+    except Exception:
+        projects = []
+        project_map = {}
+
+    st.sidebar.title("Projekte")
+    if project_map:
+        selected_name = st.sidebar.selectbox("Projekt auswählen", list(project_map.keys()))
+        st.session_state.project_id = project_map[selected_name]
+    else:
+        st.session_state.project_id = None
+
+    with st.sidebar.form("create_project"):
+        new_name = st.text_input("Neues Projekt")
+        new_desc = st.text_input("Beschreibung")
+        created = st.form_submit_button("Projekt erstellen")
+        if created and new_name:
+            try:
+                res = requests.post(
+                    f"{BACKEND_URL}/projects",
+                    json={"name": new_name, "description": new_desc},
+                    headers=AUTH_HEADERS,
+                )
+                res.raise_for_status()
+                st.experimental_rerun()
+            except Exception as e:
+                st.error(str(e))
+
 
 def get_materials():
     try:
-        r = requests.get(
-            f"{BACKEND_URL}/materials",
-            headers=AUTH_HEADERS,
-        )
+        url = f"{BACKEND_URL}/projects/{st.session_state.project_id}/materials"
+        r = requests.get(url, headers=AUTH_HEADERS)
         r.raise_for_status()
         return r.json()
     except Exception:
@@ -55,10 +88,8 @@ def get_materials():
 
 def get_components():
     try:
-        r = requests.get(
-            f"{BACKEND_URL}/components",
-            headers=AUTH_HEADERS,
-        )
+        url = f"{BACKEND_URL}/projects/{st.session_state.project_id}/components"
+        r = requests.get(url, headers=AUTH_HEADERS)
         r.raise_for_status()
         return r.json()
     except Exception:
@@ -91,8 +122,9 @@ if page == "Materials":
         co2_value = st.number_input("CO2 value", value=0.0)
         submitted = st.form_submit_button("Create")
         if submitted and name:
+            url = f"{BACKEND_URL}/projects/{st.session_state.project_id}/materials"
             res = requests.post(
-                f"{BACKEND_URL}/materials",
+                url,
                 json={
                     "name": name,
                     "description": description,
@@ -120,8 +152,9 @@ if page == "Materials":
             )
             updated = st.form_submit_button("Update")
             if updated:
+                url = f"{BACKEND_URL}/projects/{st.session_state.project_id}/materials/{mat['id']}"
                 res = requests.put(
-                    f"{BACKEND_URL}/materials/{mat['id']}",
+                    url,
                     json={
                         "name": up_name,
                         "description": up_desc,
@@ -141,10 +174,8 @@ if page == "Materials":
         col1, col2 = st.columns([4, 1])
         col1.write(f"{m['name']} ({m['id']}) - {m.get('description', '')}")
         if col2.button("Delete", key=f"del_mat_{m['id']}"):
-            requests.delete(
-                f"{BACKEND_URL}/materials/{m['id']}",
-                headers=AUTH_HEADERS,
-            )
+            url = f"{BACKEND_URL}/projects/{st.session_state.project_id}/materials/{m['id']}"
+            requests.delete(url, headers=AUTH_HEADERS)
             st.experimental_rerun()
 
 elif page == "Components":
@@ -175,8 +206,9 @@ elif page == "Components":
         connection_type = st.number_input("Connection type", value=0, step=1)
         submitted = st.form_submit_button("Create")
         if submitted and name and mat_dict:
+            url = f"{BACKEND_URL}/projects/{st.session_state.project_id}/components"
             res = requests.post(
-                f"{BACKEND_URL}/components",
+                url,
                 json={
                     "name": name,
                     "material_id": mat_dict[mat_name],
@@ -262,8 +294,9 @@ elif page == "Components":
             )
             updated = st.form_submit_button("Update")
             if updated:
+                url = f"{BACKEND_URL}/projects/{st.session_state.project_id}/components/{comp['id']}"
                 res = requests.put(
-                    f"{BACKEND_URL}/components/{comp['id']}",
+                    url,
                     json={
                         "name": up_name,
                         "material_id": mat_dict.get(up_mat),
@@ -292,10 +325,8 @@ elif page == "Components":
         col1, col2 = st.columns([4, 1])
         col1.write(f"{c['name']} ({c['id']}) - Material: {mat_name}")
         if col2.button("Delete", key=f"del_comp_{c['id']}"):
-            requests.delete(
-                f"{BACKEND_URL}/components/{c['id']}",
-                headers=AUTH_HEADERS,
-            )
+            url = f"{BACKEND_URL}/projects/{st.session_state.project_id}/components/{c['id']}"
+            requests.delete(url, headers=AUTH_HEADERS)
             st.experimental_rerun()
 
     def build_tree(items):

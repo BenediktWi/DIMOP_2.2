@@ -23,15 +23,18 @@ async def test_export_import_roundtrip(async_client):
     token = login.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
+    proj = await async_client.post("/projects", json={"name": "Test"}, headers=headers)
+    project_id = proj.json()["id"]
+
     resp = await async_client.post(
-        "/materials",
+        f"/projects/{project_id}/materials",
         json={"name": "Steel"},
         headers=headers,
     )
     material_id = resp.json()["id"]
 
     await async_client.post(
-        "/components",
+        f"/projects/{project_id}/components",
         json={"name": "Root", "material_id": material_id},
         headers=headers,
     )
@@ -74,13 +77,15 @@ async def test_export_import_roundtrip(async_client):
         )
         token2 = login2.json()["access_token"]
         headers2 = {"Authorization": f"Bearer {token2}"}
+        proj2 = await ac.post("/projects", json={"name": "Test"}, headers=headers2)
+        project_id2 = proj2.json()["id"]
         files = {"file": ("data.csv", csv_data, "text/csv")}
         resp = await ac.post("/import", files=files, headers=headers2)
         assert resp.status_code == 200
 
-        resp = await ac.get("/materials", headers=headers2)
+        resp = await ac.get(f"/projects/{project_id2}/materials", headers=headers2)
         assert len(resp.json()) == 1
-        resp = await ac.get("/components", headers=headers2)
+        resp = await ac.get(f"/projects/{project_id2}/components", headers=headers2)
         assert len(resp.json()) == 1
 
     backend.app.dependency_overrides.clear()

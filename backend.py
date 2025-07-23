@@ -35,6 +35,24 @@ SessionLocal = sessionmaker(
 Base = declarative_base()
 
 
+class Project(Base):
+    __tablename__ = "projects"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, nullable=False)
+    description = Column(String, nullable=True)
+    materials = relationship(
+        "Material",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+    components = relationship(
+        "Component",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+
+
 class Material(Base):
     __tablename__ = "materials"
 
@@ -42,6 +60,12 @@ class Material(Base):
     name = Column(String, unique=True, index=True, nullable=False)
     description = Column(String, nullable=True)
     co2_value = Column(Float, nullable=True)
+    project_id = Column(
+        Integer,
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    project = relationship("Project", back_populates="materials")
     components = relationship(
         "Component",
         back_populates="material",
@@ -69,6 +93,12 @@ class Component(Base):
         ForeignKey("materials.id", ondelete="CASCADE"),
     )
     material = relationship("Material", back_populates="components")
+    project_id = Column(
+        Integer,
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    project = relationship("Project", back_populates="components")
     parent = relationship(
         "Component",
         remote_side=[id],
@@ -113,6 +143,7 @@ class MaterialUpdate(MaterialBase):
 
 class MaterialRead(MaterialBase):
     id: int
+    project_id: int
 
     class Config:
         orm_mode = True
@@ -139,9 +170,30 @@ class ComponentUpdate(ComponentBase):
 
 class ComponentRead(ComponentBase):
     id: int
+    project_id: int
 
     class Config:
         orm_mode = True
+
+
+class ProjectBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class ProjectCreate(ProjectBase):
+    pass
+
+
+class ProjectRead(ProjectBase):
+    id: int
+
+    class Config:
+        orm_mode = True
+
+
+class ProjectList(ProjectRead):
+    pass
 
 
 class SustainabilityBase(BaseModel):
@@ -209,12 +261,19 @@ app = FastAPI()
 @app.on_event("startup")
 def on_startup():
     inspector = inspect(engine)
+    if "projects" not in inspector.get_table_names():
+        Base.metadata.tables["projects"].create(bind=engine)
     if "materials" in inspector.get_table_names():
         cols = [c["name"] for c in inspector.get_columns("materials")]
         if "co2_value" not in cols:
             with engine.connect() as conn:
                 conn.execute(
                     text("ALTER TABLE materials ADD COLUMN co2_value FLOAT")
+                )
+        if "project_id" not in cols:
+            with engine.connect() as conn:
+                conn.execute(
+                    text("ALTER TABLE materials ADD COLUMN project_id INTEGER")
                 )
     if "components" in inspector.get_table_names():
         cols = [c["name"] for c in inspector.get_columns("components")]
@@ -225,6 +284,7 @@ def on_startup():
             ("weight", "FLOAT"),
             ("reusable", "BOOLEAN"),
             ("connection_type", "INTEGER"),
+            ("project_id", "INTEGER"),
         ]
         for col_name, col_type in new_columns:
             if col_name not in cols:
@@ -245,37 +305,67 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
     raise HTTPException(status_code=400, detail="Invalid credentials")
 
 
+# Project routes
+@app.post("/projects", response_model=ProjectRead)
+def create_project(
+    project: ProjectCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    db_proj = Project(**project.dict())
+    db.add(db_proj)
+    db.commit()
+    db.refresh(db_proj)
+    return db_proj
+
+
+@app.get("/projects", response_model=List[ProjectRead])
+def read_projects(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    return db.query(Project).all()
+
+
 # Material routes
 # TODO: use Depends(get_current_user) in each route to require authentication
-@app.post("/materials", response_model=MaterialRead)
+@app.post("/projects/{project_id}/materials", response_model=MaterialRead)
 def create_material(
+    project_id: int,
     material: MaterialCreate,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    db_material = Material(**material.dict())
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    db_material = Material(**material.dict(), project_id=project_id)
     db.add(db_material)
     db.commit()
     db.refresh(db_material)
     return db_material
 
 
-@app.get("/materials", response_model=List[MaterialRead])
+@app.get("/projects/{project_id}/materials", response_model=List[MaterialRead])
 def read_materials(
+    project_id: int,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    return db.query(Material).all()
+    if not db.get(Project, project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+    return db.query(Material).filter(Material.project_id == project_id).all()
 
 
-@app.get("/materials/{material_id}", response_model=MaterialRead)
+@app.get("/projects/{project_id}/materials/{material_id}", response_model=MaterialRead)
 def read_material(
+    project_id: int,
     material_id: int,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     material = db.get(Material, material_id)
-    if not material:
+    if not material or material.project_id != project_id:
         raise HTTPException(
             status_code=404,
             detail="Material not found",
@@ -283,14 +373,16 @@ def read_material(
     return material
 
 
-@app.put("/materials/{material_id}", response_model=MaterialRead)
+@app.put("/projects/{project_id}/materials/{material_id}", response_model=MaterialRead)
 def update_material(
-    material_id: int, material_update: MaterialUpdate,
+    project_id: int,
+    material_id: int,
+    material_update: MaterialUpdate,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     material = db.get(Material, material_id)
-    if not material:
+    if not material or material.project_id != project_id:
         raise HTTPException(
             status_code=404,
             detail="Material not found",
@@ -302,14 +394,15 @@ def update_material(
     return material
 
 
-@app.delete("/materials/{material_id}")
+@app.delete("/projects/{project_id}/materials/{material_id}")
 def delete_material(
+    project_id: int,
     material_id: int,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     material = db.get(Material, material_id)
-    if not material:
+    if not material or material.project_id != project_id:
         raise HTTPException(
             status_code=404,
             detail="Material not found",
@@ -321,48 +414,56 @@ def delete_material(
 
 # Component routes
 # TODO: secure these routes with Depends(get_current_user)
-@app.post("/components", response_model=ComponentRead)
+@app.post("/projects/{project_id}/components", response_model=ComponentRead)
 def create_component(
+    project_id: int,
     component: ComponentCreate,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    if not db.get(Material, component.material_id):
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    db_material = db.get(Material, component.material_id)
+    if not db_material or db_material.project_id != project_id:
         raise HTTPException(
             status_code=400,
             detail="Material does not exist",
         )
-    if component.parent_id and not db.get(
-        Component,
-        component.parent_id,
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail="Parent component does not exist",
-        )
-    db_component = Component(**component.dict())
+    if component.parent_id:
+        parent = db.get(Component, component.parent_id)
+        if not parent or parent.project_id != project_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Parent component does not exist",
+            )
+    db_component = Component(**component.dict(), project_id=project_id)
     db.add(db_component)
     db.commit()
     db.refresh(db_component)
     return db_component
 
 
-@app.get("/components", response_model=List[ComponentRead])
+@app.get("/projects/{project_id}/components", response_model=List[ComponentRead])
 def read_components(
+    project_id: int,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    return db.query(Component).all()
+    if not db.get(Project, project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+    return db.query(Component).filter(Component.project_id == project_id).all()
 
 
-@app.get("/components/{component_id}", response_model=ComponentRead)
+@app.get("/projects/{project_id}/components/{component_id}", response_model=ComponentRead)
 def read_component(
+    project_id: int,
     component_id: int,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     component = db.get(Component, component_id)
-    if not component:
+    if not component or component.project_id != project_id:
         raise HTTPException(
             status_code=404,
             detail="Component not found",
@@ -370,34 +471,34 @@ def read_component(
     return component
 
 
-@app.put("/components/{component_id}", response_model=ComponentRead)
+@app.put("/projects/{project_id}/components/{component_id}", response_model=ComponentRead)
 def update_component(
-    component_id: int, component_update: ComponentUpdate,
+    project_id: int,
+    component_id: int,
+    component_update: ComponentUpdate,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     component = db.get(Component, component_id)
-    if not component:
+    if not component or component.project_id != project_id:
         raise HTTPException(
             status_code=404,
             detail="Component not found",
         )
-    if component_update.material_id and not db.get(
-        Material,
-        component_update.material_id,
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail="Material does not exist",
-        )
-    if component_update.parent_id and not db.get(
-        Component,
-        component_update.parent_id,
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail="Parent component does not exist",
-        )
+    if component_update.material_id:
+        mat = db.get(Material, component_update.material_id)
+        if not mat or mat.project_id != project_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Material does not exist",
+            )
+    if component_update.parent_id:
+        parent = db.get(Component, component_update.parent_id)
+        if not parent or parent.project_id != project_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Parent component does not exist",
+            )
     for key, value in component_update.dict(exclude_unset=True).items():
         setattr(component, key, value)
     db.commit()
@@ -405,14 +506,15 @@ def update_component(
     return component
 
 
-@app.delete("/components/{component_id}")
+@app.delete("/projects/{project_id}/components/{component_id}")
 def delete_component(
+    project_id: int,
     component_id: int,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     component = db.get(Component, component_id)
-    if not component:
+    if not component or component.project_id != project_id:
         raise HTTPException(
             status_code=404,
             detail="Component not found",
@@ -471,6 +573,7 @@ def export_csv(
         "name",
         "description",
         "co2_value",
+        "project_id",
         "material_id",
         "level",
         "parent_id",
@@ -487,7 +590,7 @@ def export_csv(
                 mat.name,
                 mat.description or "",
                 mat.co2_value if mat.co2_value is not None else "",
-                "",
+                mat.project_id,
                 "",
                 "",
                 "",
@@ -504,6 +607,7 @@ def export_csv(
                 comp.name,
                 "",
                 "",
+                comp.project_id,
                 comp.material_id,
                 comp.level if comp.level is not None else "",
                 comp.parent_id if comp.parent_id is not None else "",
@@ -536,6 +640,7 @@ async def import_csv(
                     name=row["name"],
                     description=row.get("description") or None,
                     co2_value=float(row["co2_value"]) if row.get("co2_value") else None,
+                    project_id=int(row.get("project_id")) if row.get("project_id") else None,
                 )
             )
         elif model == "component":
@@ -543,6 +648,7 @@ async def import_csv(
                 Component(
                     id=int(row["id"]),
                     name=row["name"],
+                    project_id=int(row.get("project_id")) if row.get("project_id") else None,
                     material_id=int(row.get("material_id")) if row.get("material_id") else None,
                     level=int(row["level"]) if row.get("level") else None,
                     parent_id=int(row["parent_id"]) if row.get("parent_id") else None,
