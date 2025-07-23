@@ -4,6 +4,13 @@ from streamlit.errors import StreamlitAPIException
 from graphviz import Digraph
 import requests
 
+
+def do_rerun():
+    if hasattr(st, "experimental_rerun"):
+        st.experimental_rerun()
+    elif hasattr(st, "rerun"):
+        st.rerun()
+
 # Fallback-Logik für BACKEND_URL: zuerst st.secrets, dann ENV, sonst Default
 DEFAULT_BACKEND_URL = "http://localhost:8000"
 try:
@@ -27,14 +34,14 @@ if not auth_token:
                 )
                 res.raise_for_status()
                 st.session_state.token = res.json().get("access_token")
-                st.experimental_rerun()
+                do_rerun()
             except Exception:
                 st.error("Login failed")
 else:
     st.sidebar.write("Logged in")
     if st.sidebar.button("Logout"):
         del st.session_state["token"]
-        st.experimental_rerun()
+        do_rerun()
 
 AUTH_HEADERS = {
     "Authorization": f"Bearer {st.session_state['token']}"
@@ -71,7 +78,7 @@ if st.session_state.get("token"):
                     headers=AUTH_HEADERS,
                 )
                 res.raise_for_status()
-                st.experimental_rerun()
+                do_rerun()
             except Exception as e:
                 st.error(str(e))
 
@@ -176,7 +183,7 @@ if page == "Materials":
         if col2.button("Delete", key=f"del_mat_{m['id']}"):
             url = f"{BACKEND_URL}/projects/{st.session_state.project_id}/materials/{m['id']}"
             requests.delete(url, headers=AUTH_HEADERS)
-            st.experimental_rerun()
+            do_rerun()
 
 elif page == "Components":
     materials = get_materials()
@@ -327,7 +334,7 @@ elif page == "Components":
         if col2.button("Delete", key=f"del_comp_{c['id']}"):
             url = f"{BACKEND_URL}/projects/{st.session_state.project_id}/components/{c['id']}"
             requests.delete(url, headers=AUTH_HEADERS)
-            st.experimental_rerun()
+            do_rerun()
 
     def build_tree(items):
         comp_map = {c['id']: {**c, 'children': []} for c in items}
@@ -370,10 +377,10 @@ elif page == "Components":
                     st.session_state.sustainability = []
                     st.error(str(e))
                 st.session_state.show_finish = False
-                st.experimental_rerun()
+                do_rerun()
             if col2.button("Abbrechen"):
                 st.session_state.show_finish = False
-                st.experimental_rerun()
+                do_rerun()
 
     if st.session_state.get("sustainability"):
         st.header("Sustainability scores")

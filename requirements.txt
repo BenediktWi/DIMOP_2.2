@@ -1,7 +1,7 @@
 fastapi
 uvicorn
 sqlalchemy
-streamlit
+streamlit>=1.20
 requests
 flake8
 python-multipart
