@@ -17,7 +17,7 @@ pip install -r requirements.txt
 
 ## Running the backend
 
-Start the API server with Uvicorn. The database `app.db` will be created automatically in the repository root. If an old `app.db` from a previous version exists, delete it or add the missing column as shown below; otherwise the API will fail with `no such column: materials.co2_value`.
+Start the API server with Uvicorn. The database `app.db` will be created automatically in the repository root. If an old `app.db` from a previous version exists, delete it or add the missing columns as shown below; otherwise the API will fail with errors such as `no such column: materials.total_gwp`.
 
 ```bash
 python -m uvicorn backend:app --reload
@@ -25,17 +25,15 @@ python -m uvicorn backend:app --reload
 
 ### Upgrade from previous versions
 
-Version 2.2 introduces a new `co2_value` column on the `materials` table.
-Newer versions may also require additional columns on the `components` table,
-such as `connection_type` and `weight`.
-Because the example doesn't use a migration tool, you have two options when
-upgrading: delete the existing `app.db` file and let FastAPI recreate it on the
-next startup, or manually add the missing columns using `ALTER TABLE`
-statements. Without this step the API will fail to start with errors such as
-`no such column: materials.co2_value`.
+Version 2.2 introduces several global warming potential columns on the `materials` table: `total_gwp`, `fossil_gwp`, `biogenic_gwp`, and `adpf`.
+Newer versions may also require additional columns on the `components` table, such as `connection_type` and `weight`.
+Because the example doesn't use a migration tool, you have two options when upgrading: delete the existing `app.db` file and let FastAPI recreate it on the next startup, or manually add the missing columns using `ALTER TABLE` statements. Without this step the API will fail to start with errors such as `no such column: materials.total_gwp`.
 
 ```sql
-ALTER TABLE materials ADD COLUMN co2_value FLOAT;
+ALTER TABLE materials ADD COLUMN total_gwp FLOAT;
+ALTER TABLE materials ADD COLUMN fossil_gwp FLOAT;
+ALTER TABLE materials ADD COLUMN biogenic_gwp FLOAT;
+ALTER TABLE materials ADD COLUMN adpf FLOAT;
 ALTER TABLE components ADD COLUMN connection_type INTEGER;
 ALTER TABLE components ADD COLUMN weight INTEGER;
 ```
