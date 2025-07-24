@@ -66,7 +66,10 @@ class Material(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, index=True, nullable=False)
     description = Column(String, nullable=True)
-    co2_value = Column(Float, nullable=True)
+    total_gwp = Column(Float, nullable=True)
+    fossil_gwp = Column(Float, nullable=True)
+    biogenic_gwp = Column(Float, nullable=True)
+    adpf = Column(Float, nullable=True)
     project_id = Column(Integer, ForeignKey("projects.id"))
     project = relationship("Project", back_populates="materials")
     components = relationship(
@@ -129,7 +132,10 @@ class Sustainability(Base):
 class MaterialBase(BaseModel):
     name: str
     description: Optional[str] = None
-    co2_value: Optional[float] = None
+    total_gwp: Optional[float] = None
+    fossil_gwp: Optional[float] = None
+    biogenic_gwp: Optional[float] = None
+    adpf: Optional[float] = None
 
 
 class ProjectBase(BaseModel):
@@ -221,7 +227,7 @@ def compute_component_score(
         return cache[component.id]
 
     if component.is_atomic:
-        material_co2 = component.material.co2_value or 0
+        material_co2 = component.material.total_gwp or 0
         weight = component.weight or 0
         score = weight * material_co2
     else:
@@ -258,11 +264,32 @@ def on_startup():
     inspector = inspect(engine)
     if "materials" in inspector.get_table_names():
         cols = [c["name"] for c in inspector.get_columns("materials")]
-        if "co2_value" not in cols:
+        if "total_gwp" not in cols:
+            if "co2_value" in cols:
+                with engine.connect() as conn:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE materials RENAME COLUMN co2_value TO total_gwp"
+                        )
+                    )
+            else:
+                with engine.connect() as conn:
+                    conn.execute(
+                        text("ALTER TABLE materials ADD COLUMN total_gwp FLOAT")
+                    )
+        if "fossil_gwp" not in cols:
             with engine.connect() as conn:
                 conn.execute(
-                    text("ALTER TABLE materials ADD COLUMN co2_value FLOAT")
+                    text("ALTER TABLE materials ADD COLUMN fossil_gwp FLOAT")
                 )
+        if "biogenic_gwp" not in cols:
+            with engine.connect() as conn:
+                conn.execute(
+                    text("ALTER TABLE materials ADD COLUMN biogenic_gwp FLOAT")
+                )
+        if "adpf" not in cols:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE materials ADD COLUMN adpf FLOAT"))
         if "project_id" not in cols:
             with engine.connect() as conn:
                 conn.execute(
@@ -557,7 +584,10 @@ def export_csv(
         "id",
         "name",
         "description",
-        "co2_value",
+        "total_gwp",
+        "fossil_gwp",
+        "biogenic_gwp",
+        "adpf",
         "project_id",
         "material_id",
         "level",
@@ -574,7 +604,10 @@ def export_csv(
                 mat.id,
                 mat.name,
                 mat.description or "",
-                mat.co2_value if mat.co2_value is not None else "",
+                mat.total_gwp if mat.total_gwp is not None else "",
+                mat.fossil_gwp if mat.fossil_gwp is not None else "",
+                mat.biogenic_gwp if mat.biogenic_gwp is not None else "",
+                mat.adpf if mat.adpf is not None else "",
                 mat.project_id,
                 "",
                 "",
@@ -591,6 +624,9 @@ def export_csv(
                 "component",
                 comp.id,
                 comp.name,
+                "",
+                "",
+                "",
                 "",
                 "",
                 comp.project_id,
@@ -625,7 +661,10 @@ async def import_csv(
                     id=int(row["id"]),
                     name=row["name"],
                     description=row.get("description") or None,
-                    co2_value=float(row["co2_value"]) if row.get("co2_value") else None,
+                    total_gwp=float(row["total_gwp"]) if row.get("total_gwp") else None,
+                    fossil_gwp=float(row["fossil_gwp"]) if row.get("fossil_gwp") else None,
+                    biogenic_gwp=float(row["biogenic_gwp"]) if row.get("biogenic_gwp") else None,
+                    adpf=float(row["adpf"]) if row.get("adpf") else None,
                     project_id=int(row.get("project_id")) if row.get("project_id") else None,
                 )
             )

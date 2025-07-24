@@ -157,7 +157,10 @@ if page == "Materials":
     with st.form("create_material"):
         name = st.text_input("Name")
         description = st.text_input("Description")
-        co2_value = st.number_input("CO2 value", value=0.0)
+        total_gwp = st.number_input("Total - GWP", value=0.0)
+        fossil_gwp = st.number_input("Fossil - GWP", value=0.0)
+        biogenic_gwp = st.number_input("Biogenic - GWP", value=0.0)
+        adpf = st.number_input("ADPF", value=0.0)
         submitted = st.form_submit_button("Create")
         if submitted and name:
             res = requests.post(
@@ -165,7 +168,10 @@ if page == "Materials":
                 json={
                     "name": name,
                     "description": description,
-                    "co2_value": co2_value,
+                    "total_gwp": total_gwp,
+                    "fossil_gwp": fossil_gwp,
+                    "biogenic_gwp": biogenic_gwp,
+                    "adpf": adpf,
                     "project_id": st.session_state.get("project_id"),
                 },
                 headers=AUTH_HEADERS,
@@ -184,9 +190,21 @@ if page == "Materials":
         with st.form("update_material"):
             up_name = st.text_input("Name", mat["name"])
             up_desc = st.text_input("Description", mat.get("description", ""))
-            up_co2 = st.number_input(
-                "CO2 value",
-                value=mat.get("co2_value", 0.0) or 0.0,
+            up_total = st.number_input(
+                "Total - GWP",
+                value=mat.get("total_gwp", 0.0) or 0.0,
+            )
+            up_fossil = st.number_input(
+                "Fossil - GWP",
+                value=mat.get("fossil_gwp", 0.0) or 0.0,
+            )
+            up_bio = st.number_input(
+                "Biogenic - GWP",
+                value=mat.get("biogenic_gwp", 0.0) or 0.0,
+            )
+            up_adpf = st.number_input(
+                "ADPF",
+                value=mat.get("adpf", 0.0) or 0.0,
             )
             updated = st.form_submit_button("Update")
             if updated:
@@ -195,7 +213,10 @@ if page == "Materials":
                     json={
                         "name": up_name,
                         "description": up_desc,
-                        "co2_value": up_co2,
+                        "total_gwp": up_total,
+                        "fossil_gwp": up_fossil,
+                        "biogenic_gwp": up_bio,
+                        "adpf": up_adpf,
                         "project_id": st.session_state.get("project_id"),
                     },
                     headers=AUTH_HEADERS,
@@ -210,7 +231,15 @@ if page == "Materials":
     st.header("Existing materials")
     for m in materials:
         col1, col2 = st.columns([4, 1])
-        col1.write(f"{m['name']} ({m['id']}) - {m.get('description', '')}")
+        info = (
+            f"Total: {m.get('total_gwp', '')}, "
+            f"Fossil: {m.get('fossil_gwp', '')}, "
+            f"Biogenic: {m.get('biogenic_gwp', '')}, "
+            f"ADPF: {m.get('adpf', '')}"
+        )
+        col1.write(
+            f"{m['name']} ({m['id']}) - {m.get('description', '')} | {info}"
+        )
         if col2.button("Delete", key=f"del_mat_{m['id']}"):
             requests.delete(
                 f"{BACKEND_URL}/materials/{m['id']}",
