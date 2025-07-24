@@ -5,6 +5,8 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))  # noqa: E402
 
 import httpx
 from httpx import ASGITransport
+import csv
+import io
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import sessionmaker
@@ -32,7 +34,14 @@ async def test_export_import_roundtrip(async_client):
 
     resp = await async_client.post(
         "/materials",
-        json={"name": "Steel", "project_id": project_id},
+        json={
+            "name": "Steel",
+            "project_id": project_id,
+            "total_gwp": 10.0,
+            "fossil_gwp": 5.5,
+            "biogenic_gwp": 3.3,
+            "adpf": 8.0,
+        },
         headers=headers,
     )
     material_id = resp.json()["id"]
@@ -50,6 +59,17 @@ async def test_export_import_roundtrip(async_client):
     )
     assert resp.status_code == 200
     csv_data = resp.text
+
+    reader = csv.DictReader(io.StringIO(csv_data))
+    rows = list(reader)
+    assert "total_gwp" in reader.fieldnames
+    assert "fossil_gwp" in reader.fieldnames
+    assert "biogenic_gwp" in reader.fieldnames
+    assert "adpf" in reader.fieldnames
+    assert rows[0]["total_gwp"] == "10.0"
+    assert rows[0]["fossil_gwp"] == "5.5"
+    assert rows[0]["biogenic_gwp"] == "3.3"
+    assert rows[0]["adpf"] == "8.0"
 
     engine2 = create_engine(
         "sqlite:///:memory:",
@@ -100,6 +120,11 @@ async def test_export_import_roundtrip(async_client):
             headers=headers2,
         )
         assert len(resp.json()) == 1
+        mat = resp.json()[0]
+        assert mat["total_gwp"] == 10.0
+        assert mat["fossil_gwp"] == 5.5
+        assert mat["biogenic_gwp"] == 3.3
+        assert mat["adpf"] == 8.0
         resp = await ac.get(
             "/components",
             params={"project_id": project_id},

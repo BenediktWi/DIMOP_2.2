@@ -186,6 +186,12 @@ async def test_startup_adds_component_columns(async_client_missing_columns):
     cols = [c["name"] for c in inspector.get_columns("components")]
     assert "level" in cols
 
+    mat_cols = [c["name"] for c in inspector.get_columns("materials")]
+    assert "total_gwp" in mat_cols
+    assert "fossil_gwp" in mat_cols
+    assert "biogenic_gwp" in mat_cols
+    assert "adpf" in mat_cols
+
 
 @pytest.mark.anyio("asyncio")
 async def test_duplicate_material_name_returns_400(async_client_full_schema):
