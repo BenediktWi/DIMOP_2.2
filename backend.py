@@ -159,8 +159,8 @@ class MaterialRead(MaterialBase):
     id: int
     project_id: int
 
-class Config:
-    orm_mode = True
+    class Config:
+        orm_mode = True
 
 
 class ComponentBase(BaseModel):
