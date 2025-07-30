@@ -743,3 +743,54 @@ async def import_csv(
         "imported_materials": len(materials),
         "imported_components": len(components),
     }
+
+
+def _aggregate_metrics(component: Component) -> Dict[str, float]:
+    """Recursively sum GWP and ADPf for component tree."""
+    weight = component.weight or 1.0
+    mat = component.material
+    total = (mat.total_gwp or 0.0) * weight
+    fossil = (mat.fossil_gwp or 0.0) * weight
+    biogenic = (mat.biogenic_gwp or 0.0) * weight
+    adpf = (mat.adpf or 0.0) * weight
+    for child in component.children:
+        child_vals = _aggregate_metrics(child)
+        total += child_vals["total_gwp"]
+        fossil += child_vals["fossil_gwp"]
+        biogenic += child_vals["biogenic_gwp"]
+        adpf += child_vals["adpf"]
+    return {
+        "total_gwp": total,
+        "fossil_gwp": fossil,
+        "biogenic_gwp": biogenic,
+        "adpf": adpf,
+    }
+
+
+def _grade_from_rv(rv: float) -> str:
+    if rv < 15:
+        return "A"
+    if rv < 30:
+        return "B"
+    if rv < 50:
+        return "C"
+    return "D"
+
+
+@app.post("/evaluation/{component_id}")
+def evaluate_component(
+    component_id: int,
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    component = db.get(Component, component_id)
+    if not component or component.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Component not found")
+    metrics = _aggregate_metrics(component)
+    rv = metrics["total_gwp"]
+    return {
+        **metrics,
+        "rv": rv,
+        "grade": _grade_from_rv(rv),
+    }

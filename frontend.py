@@ -454,6 +454,30 @@ elif page == "Components":
         for entry in st.session_state.sustainability:
             st.write(f"{entry['name']}: {entry['score']:.2f}")
 
+    st.header("Evaluate component")
+    if components:
+        eval_map = {f"{c['name']} (id:{c['id']})": c['id'] for c in components}
+        sel_eval = st.selectbox("Component to evaluate", list(eval_map.keys()))
+        if st.button("Run evaluation"):
+            try:
+                res = requests.post(
+                    f"{BACKEND_URL}/evaluation/{eval_map[sel_eval]}",
+                    params={"project_id": st.session_state.get("project_id")},
+                    headers=AUTH_HEADERS,
+                )
+                res.raise_for_status()
+                st.session_state.evaluation = res.json()
+            except Exception as e:
+                st.error(str(e))
+        if st.session_state.get("evaluation"):
+            ev = st.session_state.evaluation
+            st.write(f"RV: {ev['rv']:.2f}")
+            st.write(f"Grade: {ev['grade']}")
+            st.write(
+                f"Total GWP: {ev['total_gwp']:.2f}, Fossil: {ev['fossil_gwp']:.2f}, "
+                f"Biogenic: {ev['biogenic_gwp']:.2f}, ADPf: {ev['adpf']:.2f}"
+            )
+    
 elif page == "Export/Import":
     st.header("Export database")
     if st.button("Download CSV"):
