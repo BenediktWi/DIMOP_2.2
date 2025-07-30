@@ -3,7 +3,6 @@ import csv
 import io
 import sqlite3
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Response
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from sqlalchemy import (
     create_engine,
@@ -23,8 +22,6 @@ from sqlalchemy.orm import (
     Session,
 )
 from sqlalchemy.exc import IntegrityError
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 DATABASE_URL = "sqlite:///app.db"
 
@@ -70,6 +67,11 @@ class Material(Base):
     fossil_gwp = Column(Float, nullable=True)
     biogenic_gwp = Column(Float, nullable=True)
     adpf = Column(Float, nullable=True)
+    is_dangerous = Column(Boolean, default=False)
+    plast_fam = Column(String, nullable=True)
+    mara_plast_id = Column(Float, nullable=True)
+    system_ability = Column(Integer, nullable=True)
+    sortability = Column(Integer, nullable=True)
     project_id = Column(Integer, ForeignKey("projects.id"))
     project = relationship("Project", back_populates="materials")
     components = relationship(
@@ -136,6 +138,11 @@ class MaterialBase(BaseModel):
     fossil_gwp: Optional[float] = None
     biogenic_gwp: Optional[float] = None
     adpf: Optional[float] = None
+    is_dangerous: Optional[bool] = None
+    plast_fam: Optional[str] = None
+    mara_plast_id: Optional[float] = None
+    system_ability: Optional[int] = None
+    sortability: Optional[int] = None
 
 
 class ProjectBase(BaseModel):
@@ -225,33 +232,81 @@ def compute_component_score(
         cache = {}
     if component.id in cache:
         return cache[component.id]
+    # gather all atomic parts for this component
+    def gather_atomic(comp: Component) -> List[Component]:
+        if comp.is_atomic:
+            return [comp]
+        parts: List[Component] = []
+        for ch in comp.children:
+            parts.extend(gather_atomic(ch))
+        return parts
 
-    if component.is_atomic:
-        material_co2 = component.material.total_gwp or 0
-        weight = component.weight or 0
-        score = weight * material_co2
+    atomic_parts = gather_atomic(component)
+    materials = [p.material for p in atomic_parts]
+    weights = [p.weight or 0.0 for p in atomic_parts]
+
+    total_weight = sum(weights) or 1.0
+
+    # f1: all materials non dangerous
+    f1 = 1.0 if all(not m.is_dangerous for m in materials) else 0.0
+
+    # f2: system ability == 2 weighted by mass
+    sys_weight = sum(
+        w for w, m in zip(weights, materials) if (m.system_ability or 0) == 2
+    )
+    f2 = sys_weight / total_weight
+
+    # f3: sortability and connection types
+    families = {m.plast_fam for m in materials}
+    sort_weight = sum(
+        w * (m.sortability or 0) for w, m in zip(weights, materials)
+    )
+    sortable_percentage = sort_weight / total_weight
+
+    relation_types: List[int] = []
+
+    def gather_relations(comp: Component):
+        for child in comp.children:
+            if child.connection_type is not None:
+                relation_types.append(child.connection_type)
+            gather_relations(child)
+
+    gather_relations(component)
+
+    n_families = len(families)
+    if n_families == 1:
+        f3 = 1.0
+    elif all(r not in (3, 4) for r in relation_types):
+        f3 = 0.95 if n_families == 2 else 0.9
+    elif sortable_percentage > 0.9:
+        if n_families == 2:
+            f3 = 0.85
+        elif n_families == 3:
+            f3 = 0.8
+        else:
+            f3 = 0.6
     else:
-        child_scores = [
-            compute_component_score(child, cache)
-            for child in component.children
-        ]
-        children_sum = sum(child_scores)
-        weight = component.weight or 1
-        reuse_factor = 0.9 if component.reusable else 1.0
-        level = component.connection_type or 0
-        bounded = min(max(level, 0), 5)
-        connection_factor = 1.0 - 0.05 * bounded
-        score = children_sum * weight * reuse_factor * connection_factor
+        f3 = 0.0
 
-    cache[component.id] = score
-    return score
+    # f4: material compatibility based on families
+    mass_products = []
+    compat_weighted = []
+    for i, mi in enumerate(materials):
+        for j, mj in enumerate(materials):
+            mp = weights[i] * weights[j]
+            comp_val = 1.0 if mi.plast_fam == mj.plast_fam else 0.0
+            mass_products.append(mp)
+            compat_weighted.append(mp * comp_val)
 
+    mm = sum(mass_products) or 1.0
+    vm = sum(compat_weighted) / mm
+    f4 = 1 + 0.2 * (vm - 0.5)
 
-def get_current_user(token: str = Depends(oauth2_scheme)):
-    """Validate the token and return the current user."""
-    if token != "fake-super-secret-token":
-        raise HTTPException(status_code=401, detail="Invalid token")
-    return {"username": "admin"}
+    rv = f1 * f2 * f3 * f4
+    rv = max(0.0, min(rv, 1.0))
+
+    cache[component.id] = rv
+    return rv
 
 
 app = FastAPI()
@@ -290,6 +345,21 @@ def on_startup():
         if "adpf" not in cols:
             with engine.connect() as conn:
                 conn.execute(text("ALTER TABLE materials ADD COLUMN adpf FLOAT"))
+        if "is_dangerous" not in cols:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE materials ADD COLUMN is_dangerous BOOLEAN"))
+        if "plast_fam" not in cols:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE materials ADD COLUMN plast_fam VARCHAR"))
+        if "mara_plast_id" not in cols:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE materials ADD COLUMN mara_plast_id FLOAT"))
+        if "system_ability" not in cols:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE materials ADD COLUMN system_ability INTEGER"))
+        if "sortability" not in cols:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE materials ADD COLUMN sortability INTEGER"))
         if "project_id" not in cols:
             with engine.connect() as conn:
                 conn.execute(
@@ -317,12 +387,6 @@ def on_startup():
     Base.metadata.create_all(bind=engine)
 
 
-@app.post("/token")
-def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    """Very basic login that returns a static token."""
-    if form_data.username == "admin" and form_data.password == "secret":
-        return {"access_token": "fake-super-secret-token", "token_type": "bearer"}
-    raise HTTPException(status_code=400, detail="Invalid credentials")
 
 
 # Project routes
@@ -330,7 +394,6 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
 def create_project(
     project: ProjectCreate,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
 ):
     db_project = Project(**project.dict())
     db.add(db_project)
@@ -342,18 +405,15 @@ def create_project(
 @app.get("/projects", response_model=List[ProjectRead])
 def read_projects(
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
 ):
     return db.query(Project).all()
 
 
 # Material routes
-# TODO: use Depends(get_current_user) in each route to require authentication
 @app.post("/materials", response_model=MaterialRead)
 def create_material(
     material: MaterialCreate,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
 ):
     if not db.get(Project, material.project_id):
         raise HTTPException(status_code=400, detail="Project does not exist")
@@ -374,7 +434,6 @@ def create_material(
 def read_materials(
     project_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
 ):
     return db.query(Material).filter(Material.project_id == project_id).all()
 
@@ -384,7 +443,6 @@ def read_material(
     material_id: int,
     project_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
 ):
     material = db.get(Material, material_id)
     if not material or material.project_id != project_id:
@@ -397,7 +455,6 @@ def update_material(
     material_id: int, material_update: MaterialUpdate,
     project_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
 ):
     material = db.get(Material, material_id)
     if not material or material.project_id != project_id:
@@ -414,7 +471,6 @@ def delete_material(
     material_id: int,
     project_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
 ):
     material = db.get(Material, material_id)
     if not material or material.project_id != project_id:
@@ -425,12 +481,10 @@ def delete_material(
 
 
 # Component routes
-# TODO: secure these routes with Depends(get_current_user)
 @app.post("/components", response_model=ComponentRead)
 def create_component(
     component: ComponentCreate,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
 ):
     if not db.get(Project, component.project_id):
         raise HTTPException(status_code=400, detail="Project does not exist")
@@ -458,7 +512,6 @@ def create_component(
 def read_components(
     project_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
 ):
     return db.query(Component).filter(Component.project_id == project_id).all()
 
@@ -468,7 +521,6 @@ def read_component(
     component_id: int,
     project_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
 ):
     component = db.get(Component, component_id)
     if not component or component.project_id != project_id:
@@ -481,7 +533,6 @@ def update_component(
     component_id: int, component_update: ComponentUpdate,
     project_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
 ):
     component = db.get(Component, component_id)
     if not component or component.project_id != project_id:
@@ -514,7 +565,6 @@ def delete_component(
     component_id: int,
     project_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
 ):
     component = db.get(Component, component_id)
     if not component or component.project_id != project_id:
@@ -575,7 +625,6 @@ def read_sustainability(
 def export_csv(
     project_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
 ):
     output = io.StringIO()
     writer = csv.writer(output)
@@ -588,6 +637,11 @@ def export_csv(
         "fossil_gwp",
         "biogenic_gwp",
         "adpf",
+        "is_dangerous",
+        "plast_fam",
+        "mara_plast_id",
+        "system_ability",
+        "sortability",
         "project_id",
         "material_id",
         "level",
@@ -608,6 +662,11 @@ def export_csv(
                 mat.fossil_gwp if mat.fossil_gwp is not None else "",
                 mat.biogenic_gwp if mat.biogenic_gwp is not None else "",
                 mat.adpf if mat.adpf is not None else "",
+                mat.is_dangerous if mat.is_dangerous is not None else "",
+                mat.plast_fam if mat.plast_fam is not None else "",
+                mat.mara_plast_id if mat.mara_plast_id is not None else "",
+                mat.system_ability if mat.system_ability is not None else "",
+                mat.sortability if mat.sortability is not None else "",
                 mat.project_id,
                 "",
                 "",
@@ -647,7 +706,6 @@ def export_csv(
 async def import_csv(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
 ):
     content = await file.read()
     reader = csv.DictReader(io.StringIO(content.decode()))
@@ -665,6 +723,11 @@ async def import_csv(
                     fossil_gwp=float(row["fossil_gwp"]) if row.get("fossil_gwp") else None,
                     biogenic_gwp=float(row["biogenic_gwp"]) if row.get("biogenic_gwp") else None,
                     adpf=float(row["adpf"]) if row.get("adpf") else None,
+                    is_dangerous=row.get("is_dangerous", "").lower() == "true" if row.get("is_dangerous") else False,
+                    plast_fam=row.get("plast_fam") or None,
+                    mara_plast_id=float(row["mara_plast_id"]) if row.get("mara_plast_id") else None,
+                    system_ability=int(row["system_ability"]) if row.get("system_ability") else None,
+                    sortability=int(row["sortability"]) if row.get("sortability") else None,
                     project_id=int(row.get("project_id")) if row.get("project_id") else None,
                 )
             )
@@ -674,12 +737,12 @@ async def import_csv(
                     id=int(row["id"]),
                     name=row["name"],
                     project_id=int(row.get("project_id")) if row.get("project_id") else None,
-                    material_id=int(row.get("material_id")) if row.get("material_id") else None,
+                    material_id=int(row["material_id"]) if row.get("material_id") and row["material_id"].isdigit() else None,
                     level=int(row["level"]) if row.get("level") else None,
                     parent_id=int(row["parent_id"]) if row.get("parent_id") else None,
-                    is_atomic=row.get("is_atomic", "").lower() == "true",
+                    is_atomic=str(row.get("is_atomic", "")).lower() == "true",
                     weight=float(row["weight"]) if row.get("weight") else None,
-                    reusable=row.get("reusable", "").lower() == "true",
+                    reusable=str(row.get("reusable", "")).lower() == "true",
                     connection_type=int(row["connection_type"]) if row.get("connection_type") else None,
                 )
             )
