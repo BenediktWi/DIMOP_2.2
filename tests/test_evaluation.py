@@ -5,8 +5,6 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 import pytest
 
-from tests.test_api import async_client_full_schema
-
 
 @pytest.mark.anyio("asyncio")
 async def test_evaluation_endpoint(async_client_full_schema):
