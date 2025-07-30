@@ -89,61 +89,33 @@ def build_graphviz_tree(items):
 
 
 
-auth_token = st.session_state.get("token")
-
-if not auth_token:
-    with st.sidebar.form("login"):
-        st.write("Login")
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        submitted = st.form_submit_button("Login")
-        if submitted:
-            try:
-                res = requests.post(
-                    f"{BACKEND_URL}/token",
-                    data={"username": username, "password": password},
-                )
-                res.raise_for_status()
-                st.session_state.token = res.json().get("access_token")
-                rerun()
-            except Exception:
-                st.error("Login failed")
+projects = get_projects()
+if projects:
+    proj_options = {f"{p['name']} (id:{p['id']})": p['id'] for p in projects}
+    if "project_id" not in st.session_state:
+        st.session_state.project_id = next(iter(proj_options.values()))
+    selected = st.sidebar.selectbox(
+        "Project",
+        list(proj_options.keys()),
+        index=list(proj_options.values()).index(st.session_state.project_id),
+    )
+    st.session_state.project_id = proj_options[selected]
 else:
-    st.sidebar.write("Logged in")
-    AUTH_HEADERS = {
-        "Authorization": f"Bearer {st.session_state['token']}"
-    }
-    projects = get_projects()
-    if projects:
-        proj_options = {f"{p['name']} (id:{p['id']})": p['id'] for p in projects}
-        if "project_id" not in st.session_state:
-            st.session_state.project_id = next(iter(proj_options.values()))
-        selected = st.sidebar.selectbox(
-            "Project",
-            list(proj_options.keys()),
-            index=list(proj_options.values()).index(st.session_state.project_id),
+    st.sidebar.write("No projects available")
+with st.sidebar.form("create_project"):
+    new_proj = st.text_input("New project name")
+    created = st.form_submit_button("Add Project")
+    if created and new_proj:
+        res = requests.post(
+            f"{BACKEND_URL}/projects",
+            json={"name": new_proj},
         )
-        st.session_state.project_id = proj_options[selected]
-    else:
-        st.sidebar.write("No projects available")
-    with st.sidebar.form("create_project"):
-        new_proj = st.text_input("New project name")
-        created = st.form_submit_button("Add Project")
-        if created and new_proj:
-            res = requests.post(
-                f"{BACKEND_URL}/projects",
-                json={"name": new_proj},
-                headers=AUTH_HEADERS,
-            )
-            if res.ok:
-                st.success("Project created")
-                st.session_state.project_id = res.json()["id"]
-                rerun()
-            else:
-                st.error(res.text)
-    if st.sidebar.button("Logout"):
-        del st.session_state["token"]
-        rerun()
+        if res.ok:
+            st.success("Project created")
+            st.session_state.project_id = res.json()["id"]
+            rerun()
+        else:
+            st.error(res.text)
 
 
 st.title("DIMOP 2.2")

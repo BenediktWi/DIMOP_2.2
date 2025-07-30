@@ -18,17 +18,9 @@ pytest_plugins = ["tests.test_api"]
 
 @pytest.mark.anyio("asyncio")
 async def test_export_import_roundtrip(async_client):
-    login = await async_client.post(
-        "/token",
-        data={"username": "admin", "password": "secret"},
-    )
-    token = login.json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
-
     proj = await async_client.post(
         "/projects",
         json={"name": "Proj"},
-        headers=headers,
     )
     project_id = proj.json()["id"]
 
@@ -42,20 +34,17 @@ async def test_export_import_roundtrip(async_client):
             "biogenic_gwp": 3.3,
             "adpf": 8.0,
         },
-        headers=headers,
     )
     material_id = resp.json()["id"]
 
     await async_client.post(
         "/components",
         json={"name": "Root", "material_id": material_id, "project_id": project_id},
-        headers=headers,
     )
 
     resp = await async_client.get(
         "/export",
         params={"project_id": project_id},
-        headers=headers,
     )
     assert resp.status_code == 200
     csv_data = resp.text
@@ -99,25 +88,17 @@ async def test_export_import_roundtrip(async_client):
     backend.app.dependency_overrides[backend.get_db] = override_get_db
     transport = ASGITransport(app=backend.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
-        login2 = await ac.post(
-            "/token",
-            data={"username": "admin", "password": "secret"},
-        )
-        token2 = login2.json()["access_token"]
-        headers2 = {"Authorization": f"Bearer {token2}"}
         await ac.post(
             "/projects",
             json={"name": "Proj"},
-            headers=headers2,
         )
         files = {"file": ("data.csv", csv_data, "text/csv")}
-        resp = await ac.post("/import", files=files, headers=headers2)
+        resp = await ac.post("/import", files=files)
         assert resp.status_code == 200
 
         resp = await ac.get(
             "/materials",
             params={"project_id": project_id},
-            headers=headers2,
         )
         assert len(resp.json()) == 1
         mat = resp.json()[0]
@@ -128,7 +109,6 @@ async def test_export_import_roundtrip(async_client):
         resp = await ac.get(
             "/components",
             params={"project_id": project_id},
-            headers=headers2,
         )
         assert len(resp.json()) == 1
 
