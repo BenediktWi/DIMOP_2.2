@@ -70,6 +70,9 @@ class Material(Base):
     fossil_gwp = Column(Float, nullable=True)
     biogenic_gwp = Column(Float, nullable=True)
     adpf = Column(Float, nullable=True)
+    is_dangerous = Column(Boolean, default=False)
+    plast_fam = Column(String, nullable=True)
+    mara_plast_id = Column(Integer, nullable=True)
     project_id = Column(Integer, ForeignKey("projects.id"))
     project = relationship("Project", back_populates="materials")
     components = relationship(
@@ -128,6 +131,34 @@ class Sustainability(Base):
     component = relationship("Component")
 
 
+class SysSort(Base):
+    __tablename__ = "sys_sort"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+
+
+class Plast(Base):
+    __tablename__ = "plast"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+
+
+class Rel(Base):
+    __tablename__ = "rel"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+
+
+class Compability(Base):
+    __tablename__ = "compability"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+
+
 # Pydantic schemas
 class MaterialBase(BaseModel):
     name: str
@@ -136,6 +167,9 @@ class MaterialBase(BaseModel):
     fossil_gwp: Optional[float] = None
     biogenic_gwp: Optional[float] = None
     adpf: Optional[float] = None
+    is_dangerous: Optional[bool] = None
+    plast_fam: Optional[str] = None
+    mara_plast_id: Optional[int] = None
 
 
 class ProjectBase(BaseModel):
@@ -227,21 +261,22 @@ def compute_component_score(
         return cache[component.id]
 
     if component.is_atomic:
-        material_co2 = component.material.total_gwp or 0
-        weight = component.weight or 0
-        score = weight * material_co2
+        f1 = component.weight or 0
+        f2 = component.material.total_gwp or 0
+        f3 = 1.0
+        f4 = 1.0
     else:
         child_scores = [
             compute_component_score(child, cache)
             for child in component.children
         ]
-        children_sum = sum(child_scores)
-        weight = component.weight or 1
-        reuse_factor = 0.9 if component.reusable else 1.0
+        f1 = component.weight or 1
+        f2 = sum(child_scores)
+        f3 = 0.9 if component.reusable else 1.0
         level = component.connection_type or 0
         bounded = min(max(level, 0), 5)
-        connection_factor = 1.0 - 0.05 * bounded
-        score = children_sum * weight * reuse_factor * connection_factor
+        f4 = 1.0 - 0.05 * bounded
+    score = f1 * f2 * f3 * f4
 
     cache[component.id] = score
     return score
@@ -294,6 +329,21 @@ def on_startup():
             with engine.connect() as conn:
                 conn.execute(
                     text("ALTER TABLE materials ADD COLUMN project_id INTEGER")
+                )
+        if "is_dangerous" not in cols:
+            with engine.connect() as conn:
+                conn.execute(
+                    text("ALTER TABLE materials ADD COLUMN is_dangerous BOOLEAN")
+                )
+        if "plast_fam" not in cols:
+            with engine.connect() as conn:
+                conn.execute(
+                    text("ALTER TABLE materials ADD COLUMN plast_fam VARCHAR")
+                )
+        if "mara_plast_id" not in cols:
+            with engine.connect() as conn:
+                conn.execute(
+                    text("ALTER TABLE materials ADD COLUMN mara_plast_id INTEGER")
                 )
     if "components" in inspector.get_table_names():
         cols = [c["name"] for c in inspector.get_columns("components")]

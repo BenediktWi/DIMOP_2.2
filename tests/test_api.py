@@ -191,6 +191,15 @@ async def test_startup_adds_component_columns(async_client_missing_columns):
     assert "fossil_gwp" in mat_cols
     assert "biogenic_gwp" in mat_cols
     assert "adpf" in mat_cols
+    assert "is_dangerous" in mat_cols
+    assert "plast_fam" in mat_cols
+    assert "mara_plast_id" in mat_cols
+
+    tables = inspector.get_table_names()
+    assert "sys_sort" in tables
+    assert "plast" in tables
+    assert "rel" in tables
+    assert "compability" in tables
 
 
 @pytest.mark.anyio("asyncio")
