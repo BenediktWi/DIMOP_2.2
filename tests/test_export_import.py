@@ -49,9 +49,16 @@ async def test_export_import_roundtrip(async_client):
     )
     material_id = resp.json()["id"]
 
-    await async_client.post(
+    comp_resp = await async_client.post(
         "/components",
         json={"name": "Root", "material_id": material_id, "project_id": project_id},
+        headers=headers,
+    )
+    component_id = comp_resp.json()["id"]
+
+    await async_client.post(
+        "/sustainability/calculate",
+        params={"project_id": project_id},
         headers=headers,
     )
 
@@ -72,6 +79,8 @@ async def test_export_import_roundtrip(async_client):
     assert "is_dangerous" in reader.fieldnames
     assert "plast_fam" in reader.fieldnames
     assert "mara_plast_id" in reader.fieldnames
+    assert "component_id" in reader.fieldnames
+    assert "score" in reader.fieldnames
     assert rows[0]["total_gwp"] == "10.0"
     assert rows[0]["fossil_gwp"] == "5.5"
     assert rows[0]["biogenic_gwp"] == "3.3"
@@ -79,6 +88,9 @@ async def test_export_import_roundtrip(async_client):
     assert rows[0]["is_dangerous"] == "True"
     assert rows[0]["plast_fam"] == "PET"
     assert rows[0]["mara_plast_id"] == "42"
+    sus_row = next(r for r in rows if r["model"] == "sustainability")
+    assert sus_row["component_id"] == str(component_id)
+    assert float(sus_row["score"]) == 0.0
 
     engine2 = create_engine(
         "sqlite:///:memory:",
@@ -143,5 +155,15 @@ async def test_export_import_roundtrip(async_client):
             headers=headers2,
         )
         assert len(resp.json()) == 1
+
+        resp = await ac.get(
+            "/sustainability",
+            params={"project_id": project_id},
+            headers=headers2,
+        )
+        sus_list = resp.json()
+        assert len(sus_list) == 1
+        assert sus_list[0]["component_id"] == component_id
+        assert sus_list[0]["score"] == 0.0
 
     backend.app.dependency_overrides.clear()

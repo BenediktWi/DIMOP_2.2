@@ -649,6 +649,8 @@ def export_csv(
         "weight",
         "reusable",
         "connection_type",
+        "component_id",
+        "score",
     ])
     for mat in db.query(Material).filter(Material.project_id == project_id).all():
         writer.writerow(
@@ -696,6 +698,39 @@ def export_csv(
                 comp.weight if comp.weight is not None else "",
                 comp.reusable if comp.reusable is not None else "",
                 comp.connection_type if comp.connection_type is not None else "",
+                "",
+                "",
+            ]
+        )
+    for sus in (
+        db.query(Sustainability)
+        .join(Component)
+        .filter(Component.project_id == project_id)
+        .all()
+    ):
+        writer.writerow(
+            [
+                "sustainability",
+                sus.id,
+                sus.name,
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                project_id,
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                sus.component_id,
+                sus.score,
             ]
         )
     output.seek(0)
@@ -712,6 +747,7 @@ async def import_csv(
     reader = csv.DictReader(io.StringIO(content.decode()))
     materials: List[Material] = []
     components: List[Component] = []
+    sustainabilities: List[Sustainability] = []
     for row in reader:
         model = row.get("model")
         if model == "material":
@@ -745,15 +781,28 @@ async def import_csv(
                     connection_type=int(row["connection_type"]) if row.get("connection_type") else None,
                 )
             )
+        elif model == "sustainability":
+            sustainabilities.append(
+                Sustainability(
+                    id=int(row["id"]),
+                    name=row["name"],
+                    component_id=int(row["component_id"]),
+                    score=float(row["score"]),
+                )
+            )
     for mat in materials:
         db.merge(mat)
     db.commit()
     for comp in components:
         db.merge(comp)
     db.commit()
+    for sus in sustainabilities:
+        db.merge(sus)
+    db.commit()
     return {
         "imported_materials": len(materials),
         "imported_components": len(components),
+        "imported_sustainabilities": len(sustainabilities),
     }
 
 
