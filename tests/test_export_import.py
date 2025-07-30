@@ -41,6 +41,9 @@ async def test_export_import_roundtrip(async_client):
             "fossil_gwp": 5.5,
             "biogenic_gwp": 3.3,
             "adpf": 8.0,
+            "is_dangerous": True,
+            "plast_fam": "PET",
+            "mara_plast_id": 42,
         },
         headers=headers,
     )
@@ -66,10 +69,16 @@ async def test_export_import_roundtrip(async_client):
     assert "fossil_gwp" in reader.fieldnames
     assert "biogenic_gwp" in reader.fieldnames
     assert "adpf" in reader.fieldnames
+    assert "is_dangerous" in reader.fieldnames
+    assert "plast_fam" in reader.fieldnames
+    assert "mara_plast_id" in reader.fieldnames
     assert rows[0]["total_gwp"] == "10.0"
     assert rows[0]["fossil_gwp"] == "5.5"
     assert rows[0]["biogenic_gwp"] == "3.3"
     assert rows[0]["adpf"] == "8.0"
+    assert rows[0]["is_dangerous"] == "True"
+    assert rows[0]["plast_fam"] == "PET"
+    assert rows[0]["mara_plast_id"] == "42"
 
     engine2 = create_engine(
         "sqlite:///:memory:",
@@ -125,6 +134,9 @@ async def test_export_import_roundtrip(async_client):
         assert mat["fossil_gwp"] == 5.5
         assert mat["biogenic_gwp"] == 3.3
         assert mat["adpf"] == 8.0
+        assert mat["is_dangerous"] is True
+        assert mat["plast_fam"] == "PET"
+        assert mat["mara_plast_id"] == 42
         resp = await ac.get(
             "/components",
             params={"project_id": project_id},

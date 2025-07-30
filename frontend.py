@@ -161,6 +161,9 @@ if page == "Materials":
         fossil_gwp = st.number_input("Fossil - GWP", value=0.0)
         biogenic_gwp = st.number_input("Biogenic - GWP", value=0.0)
         adpf = st.number_input("ADPF", value=0.0)
+        is_dangerous = st.checkbox("Dangerous")
+        plast_fam = st.text_input("Plastic family")
+        mara_plast_id = st.number_input("mara_plast_id", value=0, step=1)
         submitted = st.form_submit_button("Create")
         if submitted and name:
             res = requests.post(
@@ -172,6 +175,9 @@ if page == "Materials":
                     "fossil_gwp": fossil_gwp,
                     "biogenic_gwp": biogenic_gwp,
                     "adpf": adpf,
+                    "is_dangerous": is_dangerous,
+                    "plast_fam": plast_fam,
+                    "mara_plast_id": mara_plast_id,
                     "project_id": st.session_state.get("project_id"),
                 },
                 headers=AUTH_HEADERS,
@@ -206,6 +212,19 @@ if page == "Materials":
                 "ADPF",
                 value=mat.get("adpf", 0.0) or 0.0,
             )
+            up_danger = st.checkbox(
+                "Dangerous",
+                value=mat.get("is_dangerous", False),
+            )
+            up_plast = st.text_input(
+                "Plastic family",
+                value=mat.get("plast_fam", ""),
+            )
+            up_mara = st.number_input(
+                "mara_plast_id",
+                value=mat.get("mara_plast_id", 0) or 0,
+                step=1,
+            )
             updated = st.form_submit_button("Update")
             if updated:
                 res = requests.put(
@@ -217,6 +236,9 @@ if page == "Materials":
                         "fossil_gwp": up_fossil,
                         "biogenic_gwp": up_bio,
                         "adpf": up_adpf,
+                        "is_dangerous": up_danger,
+                        "plast_fam": up_plast,
+                        "mara_plast_id": up_mara,
                         "project_id": st.session_state.get("project_id"),
                     },
                     headers=AUTH_HEADERS,
@@ -235,7 +257,10 @@ if page == "Materials":
             f"Total: {m.get('total_gwp', '')}, "
             f"Fossil: {m.get('fossil_gwp', '')}, "
             f"Biogenic: {m.get('biogenic_gwp', '')}, "
-            f"ADPF: {m.get('adpf', '')}"
+            f"ADPF: {m.get('adpf', '')}, "
+            f"Danger: {m.get('is_dangerous', '')}, "
+            f"Plast fam: {m.get('plast_fam', '')}, "
+            f"mara_plast_id: {m.get('mara_plast_id', '')}"
         )
         col1.write(
             f"{m['name']} ({m['id']}) - {m.get('description', '')} | {info}"
