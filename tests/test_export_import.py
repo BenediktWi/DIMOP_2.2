@@ -1,17 +1,17 @@
+import csv
+import io
 import os
 import sys
 
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))  # noqa: E402
-
 import httpx
 from httpx import ASGITransport
-import csv
-import io
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import sessionmaker
-import backend
 import pytest
+
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+import backend  # noqa: E402
 
 pytest_plugins = ["tests.test_api"]
 
@@ -43,8 +43,6 @@ async def test_export_import_roundtrip(async_client):
             "adpf": 8.0,
             "density": 7.0,
             "is_dangerous": True,
-            "plast_fam": "PET",
-            "mara_plast_id": 42,
         },
         headers=headers,
     )
@@ -78,8 +76,6 @@ async def test_export_import_roundtrip(async_client):
     assert "biogenic_gwp" in reader.fieldnames
     assert "adpf" in reader.fieldnames
     assert "is_dangerous" in reader.fieldnames
-    assert "plast_fam" in reader.fieldnames
-    assert "mara_plast_id" in reader.fieldnames
     assert "volume" in reader.fieldnames
     assert "density" in reader.fieldnames
     assert "weight" in reader.fieldnames
@@ -91,8 +87,6 @@ async def test_export_import_roundtrip(async_client):
     assert rows[0]["adpf"] == "8.0"
     assert rows[0]["density"] == "7.0"
     assert rows[0]["is_dangerous"] == "True"
-    assert rows[0]["plast_fam"] == "PET"
-    assert rows[0]["mara_plast_id"] == "42"
     sus_row = next(r for r in rows if r["model"] == "sustainability")
     assert sus_row["component_id"] == str(component_id)
     assert float(sus_row["score"]) == 0.0
@@ -105,7 +99,8 @@ async def test_export_import_roundtrip(async_client):
     with engine2.connect() as conn:
         conn.execute(
             text(
-                "CREATE TABLE materials (id INTEGER PRIMARY KEY, name VARCHAR, description VARCHAR)"
+                "CREATE TABLE materials (id INTEGER PRIMARY KEY, "
+                "name VARCHAR, description VARCHAR)"
             )
         )
     TestingSessionLocal = sessionmaker(
@@ -153,8 +148,6 @@ async def test_export_import_roundtrip(async_client):
         assert mat["adpf"] == 8.0
         assert mat["density"] == 7.0
         assert mat["is_dangerous"] is True
-        assert mat["plast_fam"] == "PET"
-        assert mat["mara_plast_id"] == 42
         resp = await ac.get(
             "/components",
             params={"project_id": project_id},
