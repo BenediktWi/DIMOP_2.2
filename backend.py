@@ -94,6 +94,8 @@ class Component(Base):
         nullable=True,
     )
     is_atomic = Column(Boolean, default=False)
+    # Keep explicit weight as optional; fall back via get_weight()
+    weight = Column(Float, nullable=True)
     volume = Column(Float, nullable=True)
     density = Column(Float, nullable=True)
     reusable = Column(Boolean, default=False)
@@ -117,10 +119,19 @@ class Component(Base):
         cascade="all, delete-orphan",
     )
 
-    @property
-    def weight(self) -> float:
-        """Return computed weight from volume and density."""
-        return (self.volume or 0.0) * (self.density or 0.0)
+    def get_weight(self) -> float:
+        """Return the effective weight of the component.
+
+        Priority of weight sources:
+        1. Explicit weight attribute if provided.
+        2. Derived from volume and density.
+        3. Default of 0 for atomic components and 1 for others.
+        """
+        if self.weight is not None:
+            return self.weight
+        if self.volume is not None and self.density is not None:
+            return self.volume * self.density
+        return 0.0 if self.is_atomic else 1.0
 
 
 class Sustainability(Base):
@@ -215,6 +226,7 @@ class ComponentBase(BaseModel):
     level: Optional[int] = None
     parent_id: Optional[int] = None
     is_atomic: Optional[bool] = None
+    weight: Optional[float] = None
     volume: Optional[float] = None
     density: Optional[float] = None
     reusable: Optional[bool] = None
@@ -232,7 +244,7 @@ class ComponentUpdate(ComponentBase):
 
 class ComponentRead(ComponentBase):
     id: int
-    
+
     class Config:
         orm_mode = True
 
@@ -268,7 +280,7 @@ def compute_component_score(
         return cache[component.id]
 
     if component.is_atomic:
-        f1 = component.weight or 0
+        f1 = component.get_weight()
         f2 = component.material.total_gwp or 0
         f3 = 1.0
         f4 = 1.0
@@ -277,7 +289,7 @@ def compute_component_score(
             compute_component_score(child, cache)
             for child in component.children
         ]
-        f1 = component.weight or 1
+        f1 = component.get_weight()
         f2 = sum(child_scores)
         f3 = 0.9 if component.reusable else 1.0
         level = component.connection_type or 0
@@ -358,6 +370,7 @@ def on_startup():
             ("level", "INTEGER"),
             ("parent_id", "INTEGER"),
             ("is_atomic", "BOOLEAN"),
+            ("weight", "FLOAT"),
             ("volume", "FLOAT"),
             ("density", "FLOAT"),
             ("reusable", "BOOLEAN"),
@@ -372,10 +385,8 @@ def on_startup():
                             f"ALTER TABLE components ADD COLUMN {col_name} {col_type}"
                         )
                     )
-        if "weight" in cols:
-            with engine.connect() as conn:
-                conn.execute(text("ALTER TABLE components DROP COLUMN weight"))
     Base.metadata.create_all(bind=engine)
+
 
 
 @app.post("/token")
@@ -823,7 +834,7 @@ async def import_csv(
 
 def _aggregate_metrics(component: Component) -> Dict[str, float]:
     """Recursively sum GWP and ADPf for component tree."""
-    weight = component.weight or 1.0
+    weight = component.get_weight()
     mat = component.material
     total = (mat.total_gwp or 0.0) * weight
     fossil = (mat.fossil_gwp or 0.0) * weight

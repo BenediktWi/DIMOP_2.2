@@ -31,3 +31,27 @@ def test_compute_component_score_hierarchy():
     child.parent = root
     score = compute_component_score(root)
     assert pytest.approx(score) == 9.5
+
+
+def test_compute_component_score_volume_density():
+    mat = Material(id=1, name="Steel", total_gwp=2.0)
+    comp = Component(id=1, is_atomic=True, volume=3.0, density=2.0, material=mat)
+    score = compute_component_score(comp)
+    assert score == 12.0
+
+
+def test_compute_component_score_default_weight_non_atomic():
+    mat = Material(id=1, name="Steel", total_gwp=5.0)
+    child = Component(id=2, is_atomic=True, weight=1.0, material=mat)
+    root = Component(
+        id=3,
+        name="root",
+        is_atomic=False,
+        reusable=False,
+        connection_type=1,
+        material=mat,
+    )
+    root.children.append(child)
+    child.parent = root
+    score = compute_component_score(root)
+    assert pytest.approx(score) == 4.75
