@@ -149,6 +149,37 @@ async def test_create_and_read_materials(async_client):
 
 
 @pytest.mark.anyio("asyncio")
+async def test_update_material_density_no_project_id(async_client):
+    login = await async_client.post(
+        "/token",
+        data={"username": "admin", "password": "secret"},
+    )
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    proj_resp = await async_client.post(
+        "/projects", json={"name": "Proj"}, headers=headers
+    )
+    project_id = proj_resp.json()["id"]
+
+    resp = await async_client.post(
+        "/materials",
+        json={"name": "Holz", "project_id": project_id, "density": 1.0},
+        headers=headers,
+    )
+    material_id = resp.json()["id"]
+
+    resp = await async_client.put(
+        f"/materials/{material_id}",
+        json={"density": 0.8},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["density"] == 0.8
+
+
+@pytest.mark.anyio("asyncio")
 async def test_startup_adds_component_columns(async_client_missing_columns):
     login = await async_client_missing_columns.post(
         "/token",
