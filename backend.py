@@ -210,7 +210,17 @@ class MaterialCreate(MaterialBase):
     project_id: int
 
 
-class MaterialUpdate(MaterialBase):
+class MaterialUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    total_gwp: Optional[float] = None
+    fossil_gwp: Optional[float] = None
+    biogenic_gwp: Optional[float] = None
+    adpf: Optional[float] = None
+    density: Optional[float] = None
+    is_dangerous: Optional[bool] = None
+    plast_fam: Optional[str] = None
+    mara_plast_id: Optional[int] = None
     project_id: Optional[int] = None
 
 
@@ -469,13 +479,13 @@ def read_material(
 
 @app.put("/materials/{material_id}", response_model=MaterialRead)
 def update_material(
-    material_id: int, material_update: MaterialUpdate,
-    project_id: int,
+    material_id: int,
+    material_update: MaterialUpdate,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     material = db.get(Material, material_id)
-    if not material or material.project_id != project_id:
+    if not material:
         raise HTTPException(status_code=404, detail="Material not found")
     updates = material_update.dict(exclude_unset=True)
     for key, value in updates.items():
