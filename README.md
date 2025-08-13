@@ -26,7 +26,7 @@ python -m uvicorn backend:app --reload
 ### Upgrade from previous versions
 
 Version 2.2 introduces several global warming potential columns on the `materials` table: `total_gwp`, `fossil_gwp`, `biogenic_gwp`, and `adpf`.
-Newer versions may also require additional columns on the `components` table, such as `connection_type` and `weight`.
+Newer versions may also require additional columns on the `components` table, such as `connection_type`, `volume`, and `density`.
 Because the example doesn't use a migration tool, you have two options when upgrading: delete the existing `app.db` file and let FastAPI recreate it on the next startup, or manually add the missing columns using `ALTER TABLE` statements. Without this step the API will fail to start with errors such as `no such column: materials.total_gwp`.
 
 ```sql
@@ -35,7 +35,8 @@ ALTER TABLE materials ADD COLUMN fossil_gwp FLOAT;
 ALTER TABLE materials ADD COLUMN biogenic_gwp FLOAT;
 ALTER TABLE materials ADD COLUMN adpf FLOAT;
 ALTER TABLE components ADD COLUMN connection_type INTEGER;
-ALTER TABLE components ADD COLUMN weight INTEGER;
+ALTER TABLE components ADD COLUMN volume FLOAT;
+ALTER TABLE components ADD COLUMN density FLOAT;
 ```
 
 ## Starting the Streamlit frontend
