@@ -388,6 +388,12 @@ def on_startup():
                 )
     if "components" in inspector.get_table_names():
         cols = [c["name"] for c in inspector.get_columns("components")]
+        # Remove deprecated density column if it exists; component density should
+        # always come from the linked material.
+        if "density" in cols:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE components DROP COLUMN density"))
+            cols.remove("density")
         new_columns = [
             ("level", "INTEGER"),
             ("parent_id", "INTEGER"),
