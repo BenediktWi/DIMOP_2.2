@@ -42,7 +42,7 @@ def test_compute_component_score_volume_density():
 
 def test_compute_component_score_default_weight_non_atomic():
     mat = Material(id=1, name="Steel", total_gwp=5.0)
-    child = Component(id=2, is_atomic=True, weight=1.0, material=mat)
+    child = Component(id=2, is_atomic=True, volume=1.0, density=1.0, material=mat)
     root = Component(
         id=3,
         name="root",

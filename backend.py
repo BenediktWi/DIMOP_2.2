@@ -94,8 +94,7 @@ class Component(Base):
         nullable=True,
     )
     is_atomic = Column(Boolean, default=False)
-    # Keep explicit weight as optional; fall back via get_weight()
-    weight = Column(Float, nullable=True)
+    # Physical properties used to derive the component's weight
     volume = Column(Float, nullable=True)
     density = Column(Float, nullable=True)
     reusable = Column(Boolean, default=False)
@@ -122,13 +121,10 @@ class Component(Base):
     def get_weight(self) -> float:
         """Return the effective weight of the component.
 
-        Priority of weight sources:
-        1. Explicit weight attribute if provided.
-        2. Derived from volume and density.
-        3. Default of 0 for atomic components and 1 for others.
+        Weight is derived from ``volume`` and ``density`` when both values are
+        provided. When no data is available, atomic components default to 0 and
+        non-atomic components default to 1.
         """
-        if self.weight is not None:
-            return self.weight
         if self.volume is not None and self.density is not None:
             return self.volume * self.density
         return 0.0 if self.is_atomic else 1.0
@@ -226,7 +222,6 @@ class ComponentBase(BaseModel):
     level: Optional[int] = None
     parent_id: Optional[int] = None
     is_atomic: Optional[bool] = None
-    weight: Optional[float] = None
     volume: Optional[float] = None
     density: Optional[float] = None
     reusable: Optional[bool] = None
@@ -370,7 +365,6 @@ def on_startup():
             ("level", "INTEGER"),
             ("parent_id", "INTEGER"),
             ("is_atomic", "BOOLEAN"),
-            ("weight", "FLOAT"),
             ("volume", "FLOAT"),
             ("density", "FLOAT"),
             ("reusable", "BOOLEAN"),
@@ -649,6 +643,11 @@ def export_csv(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
+    """Export materials, components and sustainability scores as CSV.
+
+    Component rows include ``volume`` and ``density`` columns which replace the
+    legacy ``weight`` field.
+    """
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow([
@@ -768,6 +767,11 @@ async def import_csv(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
+    """Load materials, components and sustainability data from a CSV file.
+
+    The CSV format expects ``volume`` and ``density`` columns for component
+    entries instead of the legacy ``weight`` field.
+    """
     content = await file.read()
     reader = csv.DictReader(io.StringIO(content.decode()))
     materials: List[Material] = []
