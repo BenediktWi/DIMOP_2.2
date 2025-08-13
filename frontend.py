@@ -424,8 +424,18 @@ elif page == "Components":
             (m['name'] for m in materials if m['id'] == c['material_id']),
             'N/A',
         )
+        vol = c.get('volume')
+        dens = c.get('density')
+        weight = vol * dens if vol is not None and dens is not None else None
+        info = (
+            f"Material: {mat_name}, "
+            f"Volume: {vol if vol is not None else 'N/A'}, "
+            f"Density: {dens if dens is not None else 'N/A'}"
+        )
+        if weight is not None:
+            info += f", Weight: {weight}"
         col1, col2 = st.columns([4, 1])
-        col1.write(f"{c['name']} ({c['id']}) - Material: {mat_name}")
+        col1.write(f"{c['name']} ({c['id']}) - {info}")
         if col2.button("Delete", key=f"del_comp_{c['id']}"):
             requests.delete(
                 f"{BACKEND_URL}/components/{c['id']}",
