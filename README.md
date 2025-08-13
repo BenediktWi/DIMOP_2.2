@@ -116,7 +116,8 @@ Two helper endpoints make it easy to backup the database contents.
 
 - `GET /export` returns all materials and components in a single CSV file. Each
   row includes a `model` column with either `material` or `component` and the
-  corresponding fields.
+  corresponding fields. Component entries contain `volume` and `density`
+  columns; the legacy `weight` field is no longer used.
 - `POST /import` accepts an uploaded CSV (field name `file`) and recreates the
   records in the database.
 
