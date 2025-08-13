@@ -90,7 +90,7 @@ async def async_client_missing_columns():
         )
         conn.execute(
             text(
-                "CREATE TABLE components (id INTEGER PRIMARY KEY, name VARCHAR, material_id INTEGER)"
+                "CREATE TABLE components (id INTEGER PRIMARY KEY, name VARCHAR, material_id INTEGER, density FLOAT)"
             )
         )
     TestingSessionLocal = sessionmaker(
@@ -266,6 +266,8 @@ async def test_startup_adds_component_columns(async_client_missing_columns):
     inspector = backend.inspect(backend.engine)
     cols = [c["name"] for c in inspector.get_columns("components")]
     assert "level" in cols
+    assert "weight" in cols
+    assert "density" not in cols
 
     mat_cols = [c["name"] for c in inspector.get_columns("materials")]
     assert "total_gwp" in mat_cols
