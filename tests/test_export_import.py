@@ -41,6 +41,7 @@ async def test_export_import_roundtrip(async_client):
             "fossil_gwp": 5.5,
             "biogenic_gwp": 3.3,
             "adpf": 8.0,
+            "density": 7.0,
             "is_dangerous": True,
             "plast_fam": "PET",
             "mara_plast_id": 42,
@@ -81,12 +82,14 @@ async def test_export_import_roundtrip(async_client):
     assert "mara_plast_id" in reader.fieldnames
     assert "volume" in reader.fieldnames
     assert "density" in reader.fieldnames
+    assert "weight" in reader.fieldnames
     assert "component_id" in reader.fieldnames
     assert "score" in reader.fieldnames
     assert rows[0]["total_gwp"] == "10.0"
     assert rows[0]["fossil_gwp"] == "5.5"
     assert rows[0]["biogenic_gwp"] == "3.3"
     assert rows[0]["adpf"] == "8.0"
+    assert rows[0]["density"] == "7.0"
     assert rows[0]["is_dangerous"] == "True"
     assert rows[0]["plast_fam"] == "PET"
     assert rows[0]["mara_plast_id"] == "42"
@@ -148,6 +151,7 @@ async def test_export_import_roundtrip(async_client):
         assert mat["fossil_gwp"] == 5.5
         assert mat["biogenic_gwp"] == 3.3
         assert mat["adpf"] == 8.0
+        assert mat["density"] == 7.0
         assert mat["is_dangerous"] is True
         assert mat["plast_fam"] == "PET"
         assert mat["mara_plast_id"] == 42

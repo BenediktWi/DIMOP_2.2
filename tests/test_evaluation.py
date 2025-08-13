@@ -28,6 +28,7 @@ async def test_evaluation_endpoint(async_client_full_schema):
             "fossil_gwp": 6.0,
             "biogenic_gwp": 4.0,
             "adpf": 2.0,
+            "density": 4.0,
         },
         headers=headers,
     )
@@ -42,6 +43,7 @@ async def test_evaluation_endpoint(async_client_full_schema):
             "fossil_gwp": 2.0,
             "biogenic_gwp": 1.0,
             "adpf": 1.0,
+            "density": 4.0,
         },
         headers=headers,
     )
@@ -53,7 +55,6 @@ async def test_evaluation_endpoint(async_client_full_schema):
             "name": "Root",
             "material_id": mat1_id,
             "volume": 0.5,
-            "density": 4.0,
             "project_id": project_id,
         },
         headers=headers,
@@ -67,12 +68,23 @@ async def test_evaluation_endpoint(async_client_full_schema):
             "material_id": mat2_id,
             "parent_id": root_id,
             "volume": 0.25,
-            "density": 4.0,
             "project_id": project_id,
         },
         headers=headers,
     )
     assert child.status_code == 200
+    root_read = await client.get(
+        f"/components/{root_id}",
+        params={"project_id": project_id},
+        headers=headers,
+    )
+    assert root_read.json()["weight"] == pytest.approx(2.0)
+    child_read = await client.get(
+        f"/components/{child.json()['id']}",
+        params={"project_id": project_id},
+        headers=headers,
+    )
+    assert child_read.json()["weight"] == pytest.approx(1.0)
 
     resp = await client.post(
         f"/evaluation/{root_id}",
