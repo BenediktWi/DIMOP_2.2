@@ -16,6 +16,8 @@ def do_rerun():
 def rerun():
     """Backward compatible wrapper."""
     do_rerun()
+# Fallback-Logik für BACKEND_URL: zuerst st.secrets, dann ENV, sonst Default
+
 
 # Fallback-Logik für BACKEND_URL: zuerst st.secrets, dann ENV, sonst Default
 DEFAULT_BACKEND_URL = "http://localhost:8000"
@@ -88,7 +90,6 @@ def build_graphviz_tree(items):
     return dot
 
 
-
 auth_token = st.session_state.get("token")
 
 if not auth_token:
@@ -116,6 +117,7 @@ else:
     projects = get_projects()
     if projects:
         proj_options = {f"{p['name']} (id:{p['id']})": p['id'] for p in projects}
+        proj_map = {p['id']: p for p in projects}
         if "project_id" not in st.session_state:
             st.session_state.project_id = next(iter(proj_options.values()))
         selected = st.sidebar.selectbox(
@@ -124,15 +126,35 @@ else:
             index=list(proj_options.values()).index(st.session_state.project_id),
         )
         st.session_state.project_id = proj_options[selected]
+        st.session_state.r_strategies = proj_map[st.session_state.project_id].get(
+            "r_strategies", []
+        )
     else:
         st.sidebar.write("No projects available")
     with st.sidebar.form("create_project"):
         new_proj = st.text_input("New project name")
+        r_opts = {
+            "Refuse (R0)": "R0",
+            "Rethink (R1)": "R1",
+            "Reduce (R2)": "R2",
+            "Reuse (R3)": "R3",
+            "Repair (R4)": "R4",
+            "Refurbish (R5)": "R5",
+            "Remanufacture (R6)": "R6",
+            "Repurpose (R7)": "R7",
+            "Recycle (R8)": "R8",
+            "Recover (R9)": "R9",
+        }
+        selected_strats = [
+            code
+            for label, code in r_opts.items()
+            if st.checkbox(label, key=f"proj_{code}")
+        ]
         created = st.form_submit_button("Add Project")
         if created and new_proj:
             res = requests.post(
                 f"{BACKEND_URL}/projects",
-                json={"name": new_proj},
+                json={"name": new_proj, "r_strategies": selected_strats},
                 headers=AUTH_HEADERS,
             )
             if res.ok:
@@ -163,8 +185,6 @@ if page == "Materials":
         adpf = st.number_input("ADPF", value=0.0)
         density = st.number_input("Density", value=0.0)
         is_dangerous = st.checkbox("Dangerous")
-        plast_fam = st.text_input("Plastic family")
-        mara_plast_id = st.number_input("mara_plast_id", value=0, step=1)
         submitted = st.form_submit_button("Create")
         if submitted and name:
             res = requests.post(
@@ -178,8 +198,6 @@ if page == "Materials":
                     "adpf": adpf,
                     "density": density,
                     "is_dangerous": is_dangerous,
-                    "plast_fam": plast_fam,
-                    "mara_plast_id": mara_plast_id,
                     "project_id": st.session_state.get("project_id"),
                 },
                 headers=AUTH_HEADERS,
@@ -222,15 +240,6 @@ if page == "Materials":
                 "Dangerous",
                 value=mat.get("is_dangerous", False),
             )
-            up_plast = st.text_input(
-                "Plastic family",
-                value=mat.get("plast_fam", ""),
-            )
-            up_mara = st.number_input(
-                "mara_plast_id",
-                value=mat.get("mara_plast_id", 0) or 0,
-                step=1,
-            )
             updated = st.form_submit_button("Update")
             if updated:
                 res = requests.put(
@@ -244,8 +253,6 @@ if page == "Materials":
                         "adpf": up_adpf,
                         "density": up_density,
                         "is_dangerous": up_danger,
-                        "plast_fam": up_plast,
-                        "mara_plast_id": up_mara,
                         "project_id": st.session_state.get("project_id"),
                     },
                     headers=AUTH_HEADERS,
@@ -265,9 +272,7 @@ if page == "Materials":
             f"Fossil: {m.get('fossil_gwp', '')}, "
             f"Biogenic: {m.get('biogenic_gwp', '')}, "
             f"ADPF: {m.get('adpf', '')}, "
-            f"Danger: {m.get('is_dangerous', '')}, "
-            f"Plast fam: {m.get('plast_fam', '')}, "
-            f"mara_plast_id: {m.get('mara_plast_id', '')}"
+            f"Danger: {m.get('is_dangerous', '')}"
         )
         col1.write(
             f"{m['name']} ({m['id']}) - {m.get('description', '')} | {info}"
@@ -306,6 +311,81 @@ elif page == "Components":
         volume = st.number_input("Volume", value=0.0)
         reusable = st.checkbox("Reusable")
         connection_type = st.number_input("Connection type", value=0, step=1)
+        r_strats = st.session_state.get("r_strategies", [])
+        systemability = None
+        r_factor = None
+        trenn_eff = None
+        sort_eff = None
+        mv_bonus = 0.0
+        mv_abzug = 0.0
+        if "R8" in r_strats:
+            sys_map = {
+                "systemfähig": 1.0,
+                "potenziell systemfähig": 1.0,
+                "nicht systemfähig": 0.0,
+            }
+            systemability = sys_map[
+                st.selectbox("System ability", list(sys_map.keys()))
+            ]
+            r_factor = {
+                "Cloosed loop": 1.0,
+                "Open Loop / downcycling": 0.9,
+                "filler valorization": 0.3,
+                "thermal recovery": 0.0,
+            }[st.selectbox("Recyclingroute/ r-Faktor", list({
+                "Cloosed loop": 1.0,
+                "Open Loop / downcycling": 0.9,
+                "filler valorization": 0.3,
+                "thermal recovery": 0.0,
+            }.keys()))]
+            trenn_eff = {
+                "Single-variety / without additives": 1.0,
+                "Completely detachable by hand": 0.95,
+                "Mechanically detachable": 0.90,
+                "Only via shredding": 0.85,
+                "Not separable/ Compound": 0.0,
+            }[st.selectbox("Separation efficiency", list({
+                "Single-variety / without additives": 1.0,
+                "Completely detachable by hand": 0.95,
+                "Mechanically detachable": 0.90,
+                "Only via shredding": 0.85,
+                "Not separable/ Compound": 0.0,
+            }.keys()))]
+            sort_eff = {
+                "Sorting exclusion (criteria fulfilled)": 0.0,
+                "unreliably sortable": 0.7,
+                "Sorting with 2 MK": 0.95,
+                "Sorting with 3 MK": 0.9,
+                "No sorting necessary / pure": 1.0,
+            }[st.selectbox("Sorting efficiency", list({
+                "Sorting exclusion (criteria fulfilled)": 0.0,
+                "unreliably sortable": 0.7,
+                "Sorting with 2 MK": 0.95,
+                "Sorting with 3 MK": 0.9,
+                "No sorting necessary / pure": 1.0,
+            }.keys()))]
+            mv_bonus = {
+                "None": 0.0,
+                "MV 0.25 → 2.5": 2.5,
+                "MV 0.50 → 5.0": 5.0,
+                "MV 0.75 → 7.5": 7.5,
+                "MV 1.00 → 10.0": 10.0,
+            }[st.selectbox("Materialverträglichkeit-Bonus", [
+                "None",
+                "MV 0.25 → 2.5",
+                "MV 0.50 → 5.0",
+                "MV 0.75 → 7.5",
+                "MV 1.00 → 10.0",
+            ])]
+            mv_abzug = {
+                "kein Abzug": 0.0,
+                "unverträglich": -2.0,
+                "kontaminierend (MV-2 oder MV-3)": -3.0,
+            }[st.selectbox("Störstoffe/Kontamination – Abzug", [
+                "kein Abzug",
+                "unverträglich",
+                "kontaminierend (MV-2 oder MV-3)",
+            ])]
         submitted = st.form_submit_button("Create")
         if submitted and name and mat_dict:
             res = requests.post(
@@ -320,6 +400,18 @@ elif page == "Components":
                     "volume": volume,
                     "reusable": reusable,
                     "connection_type": connection_type,
+                    **(
+                        {
+                            "systemability": systemability,
+                            "r_factor": r_factor,
+                            "trenn_eff": trenn_eff,
+                            "sort_eff": sort_eff,
+                            "mv_bonus": mv_bonus,
+                            "mv_abzug": mv_abzug,
+                        }
+                        if "R8" in r_strats
+                        else {}
+                    ),
                 },
                 headers=AUTH_HEADERS,
             )
@@ -517,7 +609,7 @@ elif page == "Components":
                 f"Total GWP: {ev['total_gwp']:.2f}, Fossil: {ev['fossil_gwp']:.2f}, "
                 f"Biogenic: {ev['biogenic_gwp']:.2f}, ADPf: {ev['adpf']:.2f}"
             )
-    
+
 elif page == "Export/Import":
     st.header("Export database")
     if st.button("Download CSV"):

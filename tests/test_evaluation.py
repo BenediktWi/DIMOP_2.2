@@ -1,9 +1,9 @@
 import os
 import sys
 
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-
 import pytest
+
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 
 pytest_plugins = ["tests.test_api"]
@@ -12,7 +12,9 @@ pytest_plugins = ["tests.test_api"]
 @pytest.mark.anyio("asyncio")
 async def test_evaluation_endpoint(async_client_full_schema):
     client = async_client_full_schema
-    login = await client.post("/token", data={"username": "admin", "password": "secret"})
+    login = await client.post(
+        "/token", data={"username": "admin", "password": "secret"}
+    )
     token = login.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 

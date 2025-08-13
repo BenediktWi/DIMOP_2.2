@@ -4,7 +4,7 @@ import io
 import sqlite3
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Response
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 from sqlalchemy import (
     create_engine,
     Column,
@@ -38,6 +38,7 @@ def _sqlite_connect(*args, **kwargs):
         conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
+
 sqlite3.connect = _sqlite_connect
 sqlite3.dbapi2.connect = _sqlite_connect
 
@@ -56,6 +57,7 @@ class Project(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
+    r_strategies = Column(String, nullable=True)
     materials = relationship("Material", back_populates="project")
     components = relationship("Component", back_populates="project")
 
@@ -72,8 +74,6 @@ class Material(Base):
     adpf = Column(Float, nullable=True)
     density = Column(Float, nullable=True)
     is_dangerous = Column(Boolean, default=False)
-    plast_fam = Column(String, nullable=True)
-    mara_plast_id = Column(Integer, nullable=True)
     project_id = Column(Integer, ForeignKey("projects.id"))
     project = relationship("Project", back_populates="materials")
     components = relationship(
@@ -100,6 +100,12 @@ class Component(Base):
     weight = Column(Float, nullable=True)
     reusable = Column(Boolean, default=False)
     connection_type = Column(Integer, nullable=True)
+    systemability = Column(Float, nullable=True)
+    r_factor = Column(Float, nullable=True)
+    trenn_eff = Column(Float, nullable=True)
+    sort_eff = Column(Float, nullable=True)
+    mv_bonus = Column(Float, nullable=True)
+    mv_abzug = Column(Float, nullable=True)
     project_id = Column(Integer, ForeignKey("projects.id"))
     project = relationship("Project", back_populates="components")
     material_id = Column(
@@ -130,7 +136,11 @@ class Component(Base):
         """
         if self.weight is not None:
             return self.weight
-        if self.volume is not None and self.material and self.material.density is not None:
+        if (
+            self.volume is not None
+            and self.material
+            and self.material.density is not None
+        ):
             return self.volume * self.material.density
         return 0.0 if self.is_atomic else 1.0
 
@@ -187,12 +197,11 @@ class MaterialBase(BaseModel):
     adpf: Optional[float] = None
     density: Optional[float] = None
     is_dangerous: Optional[bool] = None
-    plast_fam: Optional[str] = None
-    mara_plast_id: Optional[int] = None
 
 
 class ProjectBase(BaseModel):
     name: str
+    r_strategies: Optional[List[str]] = []
 
 
 class ProjectCreate(ProjectBase):
@@ -204,6 +213,12 @@ class ProjectRead(ProjectBase):
 
     class Config:
         orm_mode = True
+
+    @validator("r_strategies", pre=True, always=True)
+    def _split_strategies(cls, v):  # type: ignore[no-untyped-def]
+        if isinstance(v, str):
+            return [s for s in v.split(",") if s]
+        return v
 
 
 class MaterialCreate(MaterialBase):
@@ -219,8 +234,6 @@ class MaterialUpdate(BaseModel):
     adpf: Optional[float] = None
     density: Optional[float] = None
     is_dangerous: Optional[bool] = None
-    plast_fam: Optional[str] = None
-    mara_plast_id: Optional[int] = None
     project_id: Optional[int] = None
 
 
@@ -241,6 +254,12 @@ class ComponentBase(BaseModel):
     volume: Optional[float] = None
     reusable: Optional[bool] = None
     connection_type: Optional[int] = None
+    systemability: Optional[float] = None
+    r_factor: Optional[float] = None
+    trenn_eff: Optional[float] = None
+    sort_eff: Optional[float] = None
+    mv_bonus: Optional[float] = 0.0
+    mv_abzug: Optional[float] = 0.0
     project_id: int
 
 
@@ -257,6 +276,12 @@ class ComponentUpdate(BaseModel):
     volume: Optional[float] = None
     reusable: Optional[bool] = None
     connection_type: Optional[int] = None
+    systemability: Optional[float] = None
+    r_factor: Optional[float] = None
+    trenn_eff: Optional[float] = None
+    sort_eff: Optional[float] = None
+    mv_bonus: Optional[float] = None
+    mv_abzug: Optional[float] = None
     project_id: Optional[int] = None
 
 
@@ -376,16 +401,12 @@ def on_startup():
                 conn.execute(
                     text("ALTER TABLE materials ADD COLUMN is_dangerous BOOLEAN")
                 )
-        if "plast_fam" not in cols:
-            with engine.connect() as conn:
-                conn.execute(
-                    text("ALTER TABLE materials ADD COLUMN plast_fam VARCHAR")
-                )
-        if "mara_plast_id" not in cols:
-            with engine.connect() as conn:
-                conn.execute(
-                    text("ALTER TABLE materials ADD COLUMN mara_plast_id INTEGER")
-                )
+        for deprecated in ["plast_fam", "mara_plast_id"]:
+            if deprecated in cols:
+                with engine.connect() as conn:
+                    conn.execute(
+                        text(f"ALTER TABLE materials DROP COLUMN {deprecated}")
+                    )
     if "components" in inspector.get_table_names():
         cols = [c["name"] for c in inspector.get_columns("components")]
         # Remove deprecated density column if it exists; component density should
@@ -403,6 +424,12 @@ def on_startup():
             ("reusable", "BOOLEAN"),
             ("connection_type", "INTEGER"),
             ("project_id", "INTEGER"),
+            ("systemability", "FLOAT"),
+            ("r_factor", "FLOAT"),
+            ("trenn_eff", "FLOAT"),
+            ("sort_eff", "FLOAT"),
+            ("mv_bonus", "FLOAT"),
+            ("mv_abzug", "FLOAT"),
         ]
         for col_name, col_type in new_columns:
             if col_name not in cols:
@@ -412,8 +439,14 @@ def on_startup():
                             f"ALTER TABLE components ADD COLUMN {col_name} {col_type}"
                         )
                     )
+    if "projects" in inspector.get_table_names():
+        pcols = [c["name"] for c in inspector.get_columns("projects")]
+        if "r_strategies" not in pcols:
+            with engine.connect() as conn:
+                conn.execute(
+                    text("ALTER TABLE projects ADD COLUMN r_strategies VARCHAR")
+                )
     Base.metadata.create_all(bind=engine)
-
 
 
 @app.post("/token")
@@ -431,7 +464,10 @@ def create_project(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    db_project = Project(**project.dict())
+    db_project = Project(
+        name=project.name,
+        r_strategies=",".join(project.r_strategies or []),
+    )
     db.add(db_project)
     db.commit()
     db.refresh(db_project)
@@ -709,8 +745,6 @@ def export_csv(
         "adpf",
         "density",
         "is_dangerous",
-        "plast_fam",
-        "mara_plast_id",
         "project_id",
         "material_id",
         "level",
@@ -720,6 +754,12 @@ def export_csv(
         "weight",
         "reusable",
         "connection_type",
+        "systemability",
+        "r_factor",
+        "trenn_eff",
+        "sort_eff",
+        "mv_bonus",
+        "mv_abzug",
         "component_id",
         "score",
     ])
@@ -736,9 +776,15 @@ def export_csv(
                 mat.adpf if mat.adpf is not None else "",
                 mat.density if mat.density is not None else "",
                 mat.is_dangerous if mat.is_dangerous is not None else "",
-                mat.plast_fam if mat.plast_fam is not None else "",
-                mat.mara_plast_id if mat.mara_plast_id is not None else "",
                 mat.project_id,
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
                 "",
                 "",
                 "",
@@ -761,8 +807,6 @@ def export_csv(
                 "",
                 "",
                 "",
-                "",
-                "",
                 comp.project_id,
                 comp.material_id,
                 comp.level if comp.level is not None else "",
@@ -772,6 +816,12 @@ def export_csv(
                 comp.weight if comp.weight is not None else "",
                 comp.reusable if comp.reusable is not None else "",
                 comp.connection_type if comp.connection_type is not None else "",
+                comp.systemability if comp.systemability is not None else "",
+                comp.r_factor if comp.r_factor is not None else "",
+                comp.trenn_eff if comp.trenn_eff is not None else "",
+                comp.sort_eff if comp.sort_eff is not None else "",
+                comp.mv_bonus if comp.mv_bonus is not None else "",
+                comp.mv_abzug if comp.mv_abzug is not None else "",
                 "",
                 "",
             ]
@@ -794,8 +844,12 @@ def export_csv(
                 "",
                 "",
                 "",
-                "",
                 project_id,
+                "",
+                "",
+                "",
+                "",
+                "",
                 "",
                 "",
                 "",
@@ -838,14 +892,18 @@ async def import_csv(
                     name=row["name"],
                     description=row.get("description") or None,
                     total_gwp=float(row["total_gwp"]) if row.get("total_gwp") else None,
-                    fossil_gwp=float(row["fossil_gwp"]) if row.get("fossil_gwp") else None,
-                    biogenic_gwp=float(row["biogenic_gwp"]) if row.get("biogenic_gwp") else None,
+                    fossil_gwp=(
+                        float(row["fossil_gwp"]) if row.get("fossil_gwp") else None
+                    ),
+                    biogenic_gwp=(
+                        float(row["biogenic_gwp"]) if row.get("biogenic_gwp") else None
+                    ),
                     adpf=float(row["adpf"]) if row.get("adpf") else None,
                     density=float(row["density"]) if row.get("density") else None,
                     is_dangerous=row.get("is_dangerous", "").lower() == "true",
-                    plast_fam=row.get("plast_fam") or None,
-                    mara_plast_id=int(row["mara_plast_id"]) if row.get("mara_plast_id") else None,
-                    project_id=int(row.get("project_id")) if row.get("project_id") else None,
+                    project_id=(
+                        int(row.get("project_id")) if row.get("project_id") else None
+                    ),
                 )
             )
         elif model == "component":
@@ -853,15 +911,33 @@ async def import_csv(
                 Component(
                     id=int(row["id"]),
                     name=row["name"],
-                    project_id=int(row.get("project_id")) if row.get("project_id") else None,
-                    material_id=int(row.get("material_id")) if row.get("material_id") else None,
+                    project_id=(
+                        int(row.get("project_id")) if row.get("project_id") else None
+                    ),
+                    material_id=(
+                        int(row.get("material_id")) if row.get("material_id") else None
+                    ),
                     level=int(row["level"]) if row.get("level") else None,
                     parent_id=int(row["parent_id"]) if row.get("parent_id") else None,
                     is_atomic=row.get("is_atomic", "").lower() == "true",
                     volume=float(row["volume"]) if row.get("volume") else None,
                     weight=float(row["weight"]) if row.get("weight") else None,
                     reusable=row.get("reusable", "").lower() == "true",
-                    connection_type=int(row["connection_type"]) if row.get("connection_type") else None,
+                    connection_type=(
+                        int(row["connection_type"])
+                        if row.get("connection_type")
+                        else None
+                    ),
+                    systemability=(
+                        float(row["systemability"])
+                        if row.get("systemability")
+                        else None
+                    ),
+                    r_factor=float(row["r_factor"]) if row.get("r_factor") else None,
+                    trenn_eff=float(row["trenn_eff"]) if row.get("trenn_eff") else None,
+                    sort_eff=float(row["sort_eff"]) if row.get("sort_eff") else None,
+                    mv_bonus=float(row["mv_bonus"]) if row.get("mv_bonus") else None,
+                    mv_abzug=float(row["mv_abzug"]) if row.get("mv_abzug") else None,
                 )
             )
         elif model == "sustainability":
@@ -938,3 +1014,57 @@ def evaluate_component(
         "rv": rv,
         "grade": _grade_from_rv(rv),
     }
+
+
+@app.post("/recycle/{project_id}")
+def recycle_evaluation(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    components = db.query(Component).filter(Component.project_id == project_id).all()
+    if not components:
+        raise HTTPException(status_code=404, detail="No components found")
+    total_weight = sum((c.weight or 0.0) for c in components)
+    if total_weight == 0:
+        return {"recycle_value": 0.0, "grade": "F"}
+
+    def weight_fraction(comp: Component) -> float:
+        return (comp.weight or 0.0) / total_weight
+
+    pW = sum(
+        (comp.r_factor or 0.0) * weight_fraction(comp) for comp in components
+    )
+    eta_trenn = sum(
+        (comp.trenn_eff or 0.0) * weight_fraction(comp) for comp in components
+    )
+    eta_sort = sum(
+        (comp.sort_eff or 0.0) * weight_fraction(comp) for comp in components
+    )
+    gmv_bonus = sum(
+        (comp.mv_bonus or 0.0) * weight_fraction(comp) for comp in components
+    )
+    gmv_abzug = sum(
+        (comp.mv_abzug or 0.0) * weight_fraction(comp) for comp in components
+    )
+
+    root = next((c for c in components if c.parent_id is None), components[0])
+    s_faeh = root.systemability or 0.0
+
+    r_val = s_faeh * pW * (eta_trenn * eta_sort + gmv_bonus - gmv_abzug)
+    r_val = max(0.0, min(1.0, r_val))
+
+    if r_val > 0.95:
+        grade = "A"
+    elif r_val > 0.85:
+        grade = "B"
+    elif r_val > 0.7:
+        grade = "C"
+    elif r_val > 0.5:
+        grade = "D"
+    elif r_val > 0.3:
+        grade = "E"
+    else:
+        grade = "F"
+
+    return {"recycle_value": round(r_val, 3), "grade": grade}
