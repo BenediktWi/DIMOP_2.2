@@ -356,3 +356,4 @@ async def test_delete_material_cascades_components(async_client_full_schema):
     )
     assert resp.status_code == 200
     assert resp.json() == []
+
