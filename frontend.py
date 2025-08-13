@@ -161,6 +161,7 @@ if page == "Materials":
         fossil_gwp = st.number_input("Fossil - GWP", value=0.0)
         biogenic_gwp = st.number_input("Biogenic - GWP", value=0.0)
         adpf = st.number_input("ADPF", value=0.0)
+        density = st.number_input("Density", value=0.0)
         is_dangerous = st.checkbox("Dangerous")
         plast_fam = st.text_input("Plastic family")
         mara_plast_id = st.number_input("mara_plast_id", value=0, step=1)
@@ -175,6 +176,7 @@ if page == "Materials":
                     "fossil_gwp": fossil_gwp,
                     "biogenic_gwp": biogenic_gwp,
                     "adpf": adpf,
+                    "density": density,
                     "is_dangerous": is_dangerous,
                     "plast_fam": plast_fam,
                     "mara_plast_id": mara_plast_id,
@@ -212,6 +214,10 @@ if page == "Materials":
                 "ADPF",
                 value=mat.get("adpf", 0.0) or 0.0,
             )
+            up_density = st.number_input(
+                "Density",
+                value=mat.get("density", 0.0) or 0.0,
+            )
             up_danger = st.checkbox(
                 "Dangerous",
                 value=mat.get("is_dangerous", False),
@@ -236,6 +242,7 @@ if page == "Materials":
                         "fossil_gwp": up_fossil,
                         "biogenic_gwp": up_bio,
                         "adpf": up_adpf,
+                        "density": up_density,
                         "is_dangerous": up_danger,
                         "plast_fam": up_plast,
                         "mara_plast_id": up_mara,
@@ -297,7 +304,6 @@ elif page == "Components":
         parent_sel = st.selectbox("Parent component", list(parent_map.keys()))
         is_atomic = st.checkbox("Atomic")
         volume = st.number_input("Volume", value=0.0)
-        density = st.number_input("Density", value=0.0)
         reusable = st.checkbox("Reusable")
         connection_type = st.number_input("Connection type", value=0, step=1)
         submitted = st.form_submit_button("Create")
@@ -312,7 +318,6 @@ elif page == "Components":
                     "parent_id": parent_map[parent_sel],
                     "is_atomic": is_atomic,
                     "volume": volume,
-                    "density": density,
                     "reusable": reusable,
                     "connection_type": connection_type,
                 },
@@ -380,10 +385,6 @@ elif page == "Components":
                 "Volume",
                 value=comp.get("volume", 0.0) or 0.0,
             )
-            up_density = st.number_input(
-                "Density",
-                value=comp.get("density", 0.0) or 0.0,
-            )
             up_reusable = st.checkbox(
                 "Reusable",
                 value=comp.get("reusable", False),
@@ -405,7 +406,6 @@ elif page == "Components":
                         "parent_id": parent_map[up_parent],
                         "is_atomic": up_atomic,
                         "volume": up_volume,
-                        "density": up_density,
                         "reusable": up_reusable,
                         "connection_type": up_conn,
                     },
@@ -420,17 +420,15 @@ elif page == "Components":
 
     st.header("Existing components")
     for c in components:
-        mat_name = next(
-            (m['name'] for m in materials if m['id'] == c['material_id']),
-            'N/A',
-        )
+        mat = next((m for m in materials if m['id'] == c['material_id']), None)
+        mat_name = mat['name'] if mat else 'N/A'
+        mat_density = mat.get('density') if mat else None
         vol = c.get('volume')
-        dens = c.get('density')
-        weight = vol * dens if vol is not None and dens is not None else None
+        weight = c.get('weight')
         info = (
             f"Material: {mat_name}, "
             f"Volume: {vol if vol is not None else 'N/A'}, "
-            f"Density: {dens if dens is not None else 'N/A'}"
+            f"Density: {mat_density if mat_density is not None else 'N/A'}"
         )
         if weight is not None:
             info += f", Weight: {weight}"

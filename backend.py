@@ -70,6 +70,7 @@ class Material(Base):
     fossil_gwp = Column(Float, nullable=True)
     biogenic_gwp = Column(Float, nullable=True)
     adpf = Column(Float, nullable=True)
+    density = Column(Float, nullable=True)
     is_dangerous = Column(Boolean, default=False)
     plast_fam = Column(String, nullable=True)
     mara_plast_id = Column(Integer, nullable=True)
@@ -96,7 +97,7 @@ class Component(Base):
     is_atomic = Column(Boolean, default=False)
     # Physical properties used to derive the component's weight
     volume = Column(Float, nullable=True)
-    density = Column(Float, nullable=True)
+    weight = Column(Float, nullable=True)
     reusable = Column(Boolean, default=False)
     connection_type = Column(Integer, nullable=True)
     project_id = Column(Integer, ForeignKey("projects.id"))
@@ -121,12 +122,16 @@ class Component(Base):
     def get_weight(self) -> float:
         """Return the effective weight of the component.
 
-        Weight is derived from ``volume`` and ``density`` when both values are
-        provided. When no data is available, atomic components default to 0 and
-        non-atomic components default to 1.
+        Weight is stored explicitly when a component is linked to a material.
+        If ``weight`` is missing but ``volume`` and the material's ``density``
+        are available, it is computed on the fly. When no data is available,
+        atomic components default to ``0`` and non-atomic components default to
+        ``1``.
         """
-        if self.volume is not None and self.density is not None:
-            return self.volume * self.density
+        if self.weight is not None:
+            return self.weight
+        if self.volume is not None and self.material and self.material.density is not None:
+            return self.volume * self.material.density
         return 0.0 if self.is_atomic else 1.0
 
 
@@ -180,6 +185,7 @@ class MaterialBase(BaseModel):
     fossil_gwp: Optional[float] = None
     biogenic_gwp: Optional[float] = None
     adpf: Optional[float] = None
+    density: Optional[float] = None
     is_dangerous: Optional[bool] = None
     plast_fam: Optional[str] = None
     mara_plast_id: Optional[int] = None
@@ -223,7 +229,6 @@ class ComponentBase(BaseModel):
     parent_id: Optional[int] = None
     is_atomic: Optional[bool] = None
     volume: Optional[float] = None
-    density: Optional[float] = None
     reusable: Optional[bool] = None
     connection_type: Optional[int] = None
     project_id: int
@@ -239,6 +244,7 @@ class ComponentUpdate(ComponentBase):
 
 class ComponentRead(ComponentBase):
     id: int
+    weight: Optional[float] = None
 
     class Config:
         orm_mode = True
@@ -339,6 +345,9 @@ def on_startup():
         if "adpf" not in cols:
             with engine.connect() as conn:
                 conn.execute(text("ALTER TABLE materials ADD COLUMN adpf FLOAT"))
+        if "density" not in cols:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE materials ADD COLUMN density FLOAT"))
         if "project_id" not in cols:
             with engine.connect() as conn:
                 conn.execute(
@@ -366,7 +375,7 @@ def on_startup():
             ("parent_id", "INTEGER"),
             ("is_atomic", "BOOLEAN"),
             ("volume", "FLOAT"),
-            ("density", "FLOAT"),
+            ("weight", "FLOAT"),
             ("reusable", "BOOLEAN"),
             ("connection_type", "INTEGER"),
             ("project_id", "INTEGER"),
@@ -468,8 +477,15 @@ def update_material(
     material = db.get(Material, material_id)
     if not material or material.project_id != project_id:
         raise HTTPException(status_code=404, detail="Material not found")
-    for key, value in material_update.dict(exclude_unset=True).items():
+    updates = material_update.dict(exclude_unset=True)
+    for key, value in updates.items():
         setattr(material, key, value)
+    if "density" in updates:
+        for comp in material.components:
+            if comp.volume is not None and material.density is not None:
+                comp.weight = comp.volume * material.density
+            else:
+                comp.weight = None
     db.commit()
     db.refresh(material)
     return material
@@ -500,7 +516,8 @@ def create_component(
 ):
     if not db.get(Project, component.project_id):
         raise HTTPException(status_code=400, detail="Project does not exist")
-    if not db.get(Material, component.material_id):
+    material = db.get(Material, component.material_id)
+    if not material:
         raise HTTPException(
             status_code=400,
             detail="Material does not exist",
@@ -514,6 +531,8 @@ def create_component(
             detail="Parent component does not exist",
         )
     db_component = Component(**component.dict())
+    if db_component.volume is not None and material.density is not None:
+        db_component.weight = db_component.volume * material.density
     db.add(db_component)
     db.commit()
     db.refresh(db_component)
@@ -570,6 +589,11 @@ def update_component(
         )
     for key, value in component_update.dict(exclude_unset=True).items():
         setattr(component, key, value)
+    material = db.get(Material, component.material_id)
+    if component.volume is not None and material and material.density is not None:
+        component.weight = component.volume * material.density
+    else:
+        component.weight = None
     db.commit()
     db.refresh(component)
     return component
@@ -645,8 +669,8 @@ def export_csv(
 ):
     """Export materials, components and sustainability scores as CSV.
 
-    Component rows include ``volume`` and ``density`` columns which replace the
-    legacy ``weight`` field.
+    Component rows include ``volume`` and ``weight`` columns. Material density
+    is stored on the material itself.
     """
     output = io.StringIO()
     writer = csv.writer(output)
@@ -659,6 +683,7 @@ def export_csv(
         "fossil_gwp",
         "biogenic_gwp",
         "adpf",
+        "density",
         "is_dangerous",
         "plast_fam",
         "mara_plast_id",
@@ -668,7 +693,7 @@ def export_csv(
         "parent_id",
         "is_atomic",
         "volume",
-        "density",
+        "weight",
         "reusable",
         "connection_type",
         "component_id",
@@ -685,6 +710,7 @@ def export_csv(
                 mat.fossil_gwp if mat.fossil_gwp is not None else "",
                 mat.biogenic_gwp if mat.biogenic_gwp is not None else "",
                 mat.adpf if mat.adpf is not None else "",
+                mat.density if mat.density is not None else "",
                 mat.is_dangerous if mat.is_dangerous is not None else "",
                 mat.plast_fam if mat.plast_fam is not None else "",
                 mat.mara_plast_id if mat.mara_plast_id is not None else "",
@@ -712,13 +738,14 @@ def export_csv(
                 "",
                 "",
                 "",
+                "",
                 comp.project_id,
                 comp.material_id,
                 comp.level if comp.level is not None else "",
                 comp.parent_id if comp.parent_id is not None else "",
                 comp.is_atomic if comp.is_atomic is not None else "",
                 comp.volume if comp.volume is not None else "",
-                comp.density if comp.density is not None else "",
+                comp.weight if comp.weight is not None else "",
                 comp.reusable if comp.reusable is not None else "",
                 comp.connection_type if comp.connection_type is not None else "",
                 "",
@@ -753,6 +780,7 @@ def export_csv(
                 "",
                 "",
                 "",
+                "",
                 sus.component_id,
                 sus.score,
             ]
@@ -769,8 +797,8 @@ async def import_csv(
 ):
     """Load materials, components and sustainability data from a CSV file.
 
-    The CSV format expects ``volume`` and ``density`` columns for component
-    entries instead of the legacy ``weight`` field.
+    The CSV format expects material rows to include ``density`` and component
+    rows to include ``volume`` and ``weight``.
     """
     content = await file.read()
     reader = csv.DictReader(io.StringIO(content.decode()))
@@ -789,6 +817,7 @@ async def import_csv(
                     fossil_gwp=float(row["fossil_gwp"]) if row.get("fossil_gwp") else None,
                     biogenic_gwp=float(row["biogenic_gwp"]) if row.get("biogenic_gwp") else None,
                     adpf=float(row["adpf"]) if row.get("adpf") else None,
+                    density=float(row["density"]) if row.get("density") else None,
                     is_dangerous=row.get("is_dangerous", "").lower() == "true",
                     plast_fam=row.get("plast_fam") or None,
                     mara_plast_id=int(row["mara_plast_id"]) if row.get("mara_plast_id") else None,
@@ -806,7 +835,7 @@ async def import_csv(
                     parent_id=int(row["parent_id"]) if row.get("parent_id") else None,
                     is_atomic=row.get("is_atomic", "").lower() == "true",
                     volume=float(row["volume"]) if row.get("volume") else None,
-                    density=float(row["density"]) if row.get("density") else None,
+                    weight=float(row["weight"]) if row.get("weight") else None,
                     reusable=row.get("reusable", "").lower() == "true",
                     connection_type=int(row["connection_type"]) if row.get("connection_type") else None,
                 )
