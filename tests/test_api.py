@@ -180,6 +180,56 @@ async def test_update_material_density_no_project_id(async_client):
 
 
 @pytest.mark.anyio("asyncio")
+async def test_update_component_material_no_project_id(async_client):
+    login = await async_client.post(
+        "/token",
+        data={"username": "admin", "password": "secret"},
+    )
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    proj = await async_client.post(
+        "/projects", json={"name": "Proj"}, headers=headers
+    )
+    project_id = proj.json()["id"]
+
+    mat1 = await async_client.post(
+        "/materials",
+        json={"name": "Old", "project_id": project_id},
+        headers=headers,
+    )
+    mat2 = await async_client.post(
+        "/materials",
+        json={"name": "New", "project_id": project_id, "density": 2.5},
+        headers=headers,
+    )
+    mat2_id = mat2.json()["id"]
+
+    comp = await async_client.post(
+        "/components",
+        json={
+            "name": "Comp",
+            "material_id": mat1.json()["id"],
+            "volume": 3.0,
+            "project_id": project_id,
+        },
+        headers=headers,
+    )
+    comp_id = comp.json()["id"]
+    assert comp.json()["weight"] is None
+
+    resp = await async_client.put(
+        f"/components/{comp_id}",
+        json={"material_id": mat2_id},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["material_id"] == mat2_id
+    assert data["weight"] == pytest.approx(7.5)
+
+
+@pytest.mark.anyio("asyncio")
 async def test_startup_adds_component_columns(async_client_missing_columns):
     login = await async_client_missing_columns.post(
         "/token",
@@ -306,3 +356,4 @@ async def test_delete_material_cascades_components(async_client_full_schema):
     )
     assert resp.status_code == 200
     assert resp.json() == []
+

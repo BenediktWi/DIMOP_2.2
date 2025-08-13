@@ -248,7 +248,15 @@ class ComponentCreate(ComponentBase):
     pass
 
 
-class ComponentUpdate(ComponentBase):
+class ComponentUpdate(BaseModel):
+    name: Optional[str] = None
+    material_id: Optional[int] = None
+    level: Optional[int] = None
+    parent_id: Optional[int] = None
+    is_atomic: Optional[bool] = None
+    volume: Optional[float] = None
+    reusable: Optional[bool] = None
+    connection_type: Optional[int] = None
     project_id: Optional[int] = None
 
 
@@ -573,13 +581,13 @@ def read_component(
 
 @app.put("/components/{component_id}", response_model=ComponentRead)
 def update_component(
-    component_id: int, component_update: ComponentUpdate,
-    project_id: int,
+    component_id: int,
+    component_update: ComponentUpdate,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     component = db.get(Component, component_id)
-    if not component or component.project_id != project_id:
+    if not component:
         raise HTTPException(status_code=404, detail="Component not found")
     if component_update.material_id and not db.get(
         Material,
