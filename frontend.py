@@ -296,7 +296,8 @@ elif page == "Components":
         }
         parent_sel = st.selectbox("Parent component", list(parent_map.keys()))
         is_atomic = st.checkbox("Atomic")
-        weight = st.number_input("Weight", value=0.0)
+        volume = st.number_input("Volume", value=0.0)
+        density = st.number_input("Density", value=0.0)
         reusable = st.checkbox("Reusable")
         connection_type = st.number_input("Connection type", value=0, step=1)
         submitted = st.form_submit_button("Create")
@@ -310,7 +311,8 @@ elif page == "Components":
                     "level": level,
                     "parent_id": parent_map[parent_sel],
                     "is_atomic": is_atomic,
-                    "weight": weight,
+                    "volume": volume,
+                    "density": density,
                     "reusable": reusable,
                     "connection_type": connection_type,
                 },
@@ -374,9 +376,13 @@ elif page == "Components":
                 "Atomic",
                 value=comp.get("is_atomic", False),
             )
-            up_weight = st.number_input(
-                "Weight",
-                value=comp.get("weight", 0.0) or 0.0,
+            up_volume = st.number_input(
+                "Volume",
+                value=comp.get("volume", 0.0) or 0.0,
+            )
+            up_density = st.number_input(
+                "Density",
+                value=comp.get("density", 0.0) or 0.0,
             )
             up_reusable = st.checkbox(
                 "Reusable",
@@ -398,7 +404,8 @@ elif page == "Components":
                         "level": up_level,
                         "parent_id": parent_map[up_parent],
                         "is_atomic": up_atomic,
-                        "weight": up_weight,
+                        "volume": up_volume,
+                        "density": up_density,
                         "reusable": up_reusable,
                         "connection_type": up_conn,
                     },

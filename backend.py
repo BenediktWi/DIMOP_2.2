@@ -94,7 +94,8 @@ class Component(Base):
         nullable=True,
     )
     is_atomic = Column(Boolean, default=False)
-    weight = Column(Float, nullable=True)
+    volume = Column(Float, nullable=True)
+    density = Column(Float, nullable=True)
     reusable = Column(Boolean, default=False)
     connection_type = Column(Integer, nullable=True)
     project_id = Column(Integer, ForeignKey("projects.id"))
@@ -115,6 +116,11 @@ class Component(Base):
         back_populates="parent",
         cascade="all, delete-orphan",
     )
+
+    @property
+    def weight(self) -> float:
+        """Return computed weight from volume and density."""
+        return (self.volume or 0.0) * (self.density or 0.0)
 
 
 class Sustainability(Base):
@@ -209,7 +215,8 @@ class ComponentBase(BaseModel):
     level: Optional[int] = None
     parent_id: Optional[int] = None
     is_atomic: Optional[bool] = None
-    weight: Optional[float] = None
+    volume: Optional[float] = None
+    density: Optional[float] = None
     reusable: Optional[bool] = None
     connection_type: Optional[int] = None
     project_id: int
@@ -351,7 +358,8 @@ def on_startup():
             ("level", "INTEGER"),
             ("parent_id", "INTEGER"),
             ("is_atomic", "BOOLEAN"),
-            ("weight", "FLOAT"),
+            ("volume", "FLOAT"),
+            ("density", "FLOAT"),
             ("reusable", "BOOLEAN"),
             ("connection_type", "INTEGER"),
             ("project_id", "INTEGER"),
@@ -364,6 +372,9 @@ def on_startup():
                             f"ALTER TABLE components ADD COLUMN {col_name} {col_type}"
                         )
                     )
+        if "weight" in cols:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE components DROP COLUMN weight"))
     Base.metadata.create_all(bind=engine)
 
 
@@ -646,7 +657,8 @@ def export_csv(
         "level",
         "parent_id",
         "is_atomic",
-        "weight",
+        "volume",
+        "density",
         "reusable",
         "connection_type",
         "component_id",
@@ -695,7 +707,8 @@ def export_csv(
                 comp.level if comp.level is not None else "",
                 comp.parent_id if comp.parent_id is not None else "",
                 comp.is_atomic if comp.is_atomic is not None else "",
-                comp.weight if comp.weight is not None else "",
+                comp.volume if comp.volume is not None else "",
+                comp.density if comp.density is not None else "",
                 comp.reusable if comp.reusable is not None else "",
                 comp.connection_type if comp.connection_type is not None else "",
                 "",
@@ -722,6 +735,7 @@ def export_csv(
                 "",
                 "",
                 project_id,
+                "",
                 "",
                 "",
                 "",
@@ -776,7 +790,8 @@ async def import_csv(
                     level=int(row["level"]) if row.get("level") else None,
                     parent_id=int(row["parent_id"]) if row.get("parent_id") else None,
                     is_atomic=row.get("is_atomic", "").lower() == "true",
-                    weight=float(row["weight"]) if row.get("weight") else None,
+                    volume=float(row["volume"]) if row.get("volume") else None,
+                    density=float(row["density"]) if row.get("density") else None,
                     reusable=row.get("reusable", "").lower() == "true",
                     connection_type=int(row["connection_type"]) if row.get("connection_type") else None,
                 )
