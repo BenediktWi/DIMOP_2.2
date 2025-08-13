@@ -79,6 +79,8 @@ async def test_export_import_roundtrip(async_client):
     assert "is_dangerous" in reader.fieldnames
     assert "plast_fam" in reader.fieldnames
     assert "mara_plast_id" in reader.fieldnames
+    assert "volume" in reader.fieldnames
+    assert "density" in reader.fieldnames
     assert "component_id" in reader.fieldnames
     assert "score" in reader.fieldnames
     assert rows[0]["total_gwp"] == "10.0"

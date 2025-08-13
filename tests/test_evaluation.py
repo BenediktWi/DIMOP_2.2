@@ -46,7 +46,13 @@ async def test_evaluation_endpoint(async_client_full_schema):
 
     root = await client.post(
         "/components",
-        json={"name": "Root", "material_id": mat1_id, "weight": 2.0, "project_id": project_id},
+        json={
+            "name": "Root",
+            "material_id": mat1_id,
+            "volume": 2.0,
+            "density": 1.0,
+            "project_id": project_id,
+        },
         headers=headers,
     )
     root_id = root.json()["id"]
@@ -57,7 +63,8 @@ async def test_evaluation_endpoint(async_client_full_schema):
             "name": "Child",
             "material_id": mat2_id,
             "parent_id": root_id,
-            "weight": 1.0,
+            "volume": 1.0,
+            "density": 1.0,
             "project_id": project_id,
         },
         headers=headers,

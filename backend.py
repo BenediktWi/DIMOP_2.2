@@ -94,6 +94,7 @@ class Component(Base):
         nullable=True,
     )
     is_atomic = Column(Boolean, default=False)
+    # Keep explicit weight as optional; fall back via get_weight()
     weight = Column(Float, nullable=True)
     volume = Column(Float, nullable=True)
     density = Column(Float, nullable=True)
@@ -122,11 +123,10 @@ class Component(Base):
         """Return the effective weight of the component.
 
         Priority of weight sources:
-        1. Explicit `weight` attribute if provided.
-        2. Derived from `volume` and `density`.
+        1. Explicit weight attribute if provided.
+        2. Derived from volume and density.
         3. Default of 0 for atomic components and 1 for others.
         """
-
         if self.weight is not None:
             return self.weight
         if self.volume is not None and self.density is not None:
@@ -244,7 +244,7 @@ class ComponentUpdate(ComponentBase):
 
 class ComponentRead(ComponentBase):
     id: int
-    
+
     class Config:
         orm_mode = True
 
@@ -386,6 +386,7 @@ def on_startup():
                         )
                     )
     Base.metadata.create_all(bind=engine)
+
 
 
 @app.post("/token")
@@ -667,7 +668,8 @@ def export_csv(
         "level",
         "parent_id",
         "is_atomic",
-        "weight",
+        "volume",
+        "density",
         "reusable",
         "connection_type",
         "component_id",
@@ -716,7 +718,8 @@ def export_csv(
                 comp.level if comp.level is not None else "",
                 comp.parent_id if comp.parent_id is not None else "",
                 comp.is_atomic if comp.is_atomic is not None else "",
-                comp.weight if comp.weight is not None else "",
+                comp.volume if comp.volume is not None else "",
+                comp.density if comp.density is not None else "",
                 comp.reusable if comp.reusable is not None else "",
                 comp.connection_type if comp.connection_type is not None else "",
                 "",
@@ -743,6 +746,7 @@ def export_csv(
                 "",
                 "",
                 project_id,
+                "",
                 "",
                 "",
                 "",
@@ -797,7 +801,8 @@ async def import_csv(
                     level=int(row["level"]) if row.get("level") else None,
                     parent_id=int(row["parent_id"]) if row.get("parent_id") else None,
                     is_atomic=row.get("is_atomic", "").lower() == "true",
-                    weight=float(row["weight"]) if row.get("weight") else None,
+                    volume=float(row["volume"]) if row.get("volume") else None,
+                    density=float(row["density"]) if row.get("density") else None,
                     reusable=row.get("reusable", "").lower() == "true",
                     connection_type=int(row["connection_type"]) if row.get("connection_type") else None,
                 )
