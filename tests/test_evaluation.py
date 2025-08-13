@@ -6,6 +6,9 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 import pytest
 
 
+pytest_plugins = ["tests.test_api"]
+
+
 @pytest.mark.anyio("asyncio")
 async def test_evaluation_endpoint(async_client_full_schema):
     client = async_client_full_schema
@@ -49,8 +52,8 @@ async def test_evaluation_endpoint(async_client_full_schema):
         json={
             "name": "Root",
             "material_id": mat1_id,
-            "volume": 2.0,
-            "density": 1.0,
+            "volume": 0.5,
+            "density": 4.0,
             "project_id": project_id,
         },
         headers=headers,
@@ -63,8 +66,8 @@ async def test_evaluation_endpoint(async_client_full_schema):
             "name": "Child",
             "material_id": mat2_id,
             "parent_id": root_id,
-            "volume": 1.0,
-            "density": 1.0,
+            "volume": 0.25,
+            "density": 4.0,
             "project_id": project_id,
         },
         headers=headers,

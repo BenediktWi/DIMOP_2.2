@@ -10,20 +10,20 @@ from backend import compute_component_score, Component, Material
 
 def test_compute_component_score_atomic():
     mat = Material(id=1, name="Steel", total_gwp=2.0)
-    comp = Component(id=1, is_atomic=True, volume=3.0, density=1.0, material=mat)
+    comp = Component(id=1, is_atomic=True, volume=1.5, density=2.0, material=mat)
     score = compute_component_score(comp)
     assert score == 6.0
 
 
 def test_compute_component_score_hierarchy():
     mat = Material(id=1, name="Steel", total_gwp=5.0)
-    child = Component(id=2, name="child", is_atomic=True, volume=1.0, density=1.0, material=mat)
+    child = Component(id=2, name="child", is_atomic=True, volume=0.5, density=2.0, material=mat)
     root = Component(
         id=3,
         name="root",
         is_atomic=False,
-        volume=2.0,
-        density=1.0,
+        volume=1.0,
+        density=2.0,
         reusable=False,
         connection_type=1,
     )
@@ -35,14 +35,14 @@ def test_compute_component_score_hierarchy():
 
 def test_compute_component_score_volume_density():
     mat = Material(id=1, name="Steel", total_gwp=2.0)
-    comp = Component(id=1, is_atomic=True, volume=3.0, density=2.0, material=mat)
+    comp = Component(id=1, is_atomic=True, volume=1.5, density=4.0, material=mat)
     score = compute_component_score(comp)
     assert score == 12.0
 
 
 def test_compute_component_score_default_weight_non_atomic():
     mat = Material(id=1, name="Steel", total_gwp=5.0)
-    child = Component(id=2, is_atomic=True, volume=1.0, density=1.0, material=mat)
+    child = Component(id=2, is_atomic=True, volume=0.5, density=2.0, material=mat)
     root = Component(
         id=3,
         name="root",
