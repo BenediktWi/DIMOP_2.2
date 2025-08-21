@@ -336,7 +336,10 @@ def compute_component_score(
         f1 = component.get_weight()
         f2 = sum(child_scores)
         f3 = 0.9 if component.reusable else 1.0
-        level = component.connection_type or 0
+        try:
+            level = int(component.connection_type)
+        except (TypeError, ValueError):
+            level = 0
         bounded = min(max(level, 0), 5)
         f4 = 1.0 - 0.05 * bounded
     score = f1 * f2 * f3 * f4
