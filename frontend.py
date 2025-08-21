@@ -565,15 +565,8 @@ elif page == "Components":
             if node['children']:
                 display_tree(node['children'], level + 1)
 
-    st.header("Component hierarchy")
-    st.graphviz_chart(build_graphviz_tree(components))
-    tree = build_tree(components)
-    display_tree(tree)
-
-    if st.button("Fertigstellen"):
-        st.session_state.show_finish = True
-
-    if st.session_state.get("show_finish"):
+    @st.dialog("Nachhaltigkeitsbewertung berechnen")
+    def sustainability_dialog():
         st.write("Nachhaltigkeitsbewertung berechnen?")
         col1, col2 = st.columns(2)
         if col1.button("Ja, berechnen"):
@@ -587,11 +580,17 @@ elif page == "Components":
             except Exception as e:
                 st.session_state.sustainability = []
                 st.error(str(e))
-            st.session_state.show_finish = False
             rerun()
         if col2.button("Abbrechen"):
-            st.session_state.show_finish = False
             rerun()
+
+    st.header("Component hierarchy")
+    st.graphviz_chart(build_graphviz_tree(components))
+    tree = build_tree(components)
+    display_tree(tree)
+
+    if st.button("Fertigstellen"):
+        sustainability_dialog()
 
     if st.session_state.get("sustainability"):
         st.header("Sustainability scores")
