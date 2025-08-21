@@ -298,12 +298,15 @@ elif page == "Components":
             if mat_dict
             else ""
         )
-        level = st.number_input("Level", value=0, step=1)
+        level = int(st.number_input("Level", value=0, step=1))
+        parent_candidates = [
+            c for c in components if c.get("level") == level - 1
+        ]
         parent_map = {
             "None": None,
             **{
                 f"{c['name']} (id:{c['id']})": c["id"]
-                for c in components
+                for c in parent_candidates
             },
         }
         parent_sel = st.selectbox("Parent component", list(parent_map.keys()))
@@ -311,6 +314,7 @@ elif page == "Components":
         volume = st.number_input("Volume", value=0.0)
         reusable = st.checkbox("Reusable")
         connection_type = st.number_input("Connection type", value=0, step=1)
+
         r_strats = st.session_state.get("r_strategies") or []
         systemability = None
         r_factor = None
@@ -417,6 +421,7 @@ elif page == "Components":
             )
             if res.ok:
                 st.success("Component created")
+                rerun()
             else:
                 st.error(res.text)
 
@@ -447,23 +452,30 @@ elif page == "Components":
                 if mat_dict
                 else ""
             )
-            up_level = st.number_input(
-                "Level",
-                value=comp.get("level", 0) or 0,
-                step=1,
+            up_level = int(
+                st.number_input(
+                    "Level",
+                    value=comp.get("level", 0) or 0,
+                    step=1,
+                )
             )
+            parent_candidates = [
+                c
+                for c in components
+                if c["id"] != comp["id"] and c.get("level") == up_level - 1
+            ]
             parent_map = {
                 "None": None,
                 **{
                     f"{c['name']} (id:{c['id']})": c["id"]
-                    for c in components
+                    for c in parent_candidates
                 },
             }
             current_parent = comp.get("parent_id")
-            if current_parent is None:
-                parent_idx = 0
-            else:
+            if current_parent in parent_map.values():
                 parent_idx = list(parent_map.values()).index(current_parent)
+            else:
+                parent_idx = 0
             up_parent = st.selectbox(
                 "Parent component",
                 list(parent_map.keys()),
@@ -505,6 +517,7 @@ elif page == "Components":
                 )
                 if res.ok:
                     st.success("Component updated")
+                    rerun()
                 else:
                     st.error(res.text)
     else:
@@ -557,29 +570,32 @@ elif page == "Components":
     tree = build_tree(components)
     display_tree(tree)
 
+    @st.dialog("Fertigstellen bestätigen")
+    def confirm_finish():
+        st.write("Nachhaltigkeitsbewertung berechnen?")
+        col1, col2 = st.columns(2)
+        if col1.button("Ja, berechnen"):
+            try:
+                res = requests.post(
+                    f"{BACKEND_URL}/sustainability/calculate",
+                    params={"project_id": st.session_state.get("project_id")},
+                )
+                res.raise_for_status()
+                st.session_state.sustainability = res.json()
+            except Exception as e:
+                st.session_state.sustainability = []
+                st.error(str(e))
+            st.session_state.show_finish = False
+            rerun()
+        if col2.button("Abbrechen"):
+            st.session_state.show_finish = False
+            rerun()
+
     if st.button("Fertigstellen"):
         st.session_state.show_finish = True
 
     if st.session_state.get("show_finish"):
-        with st.modal("Fertigstellen bestätigen"):
-            st.write("Nachhaltigkeitsbewertung berechnen?")
-            col1, col2 = st.columns(2)
-            if col1.button("Ja, berechnen"):
-                try:
-                    res = requests.post(
-                        f"{BACKEND_URL}/sustainability/calculate",
-                        params={"project_id": st.session_state.get("project_id")},
-                    )
-                    res.raise_for_status()
-                    st.session_state.sustainability = res.json()
-                except Exception as e:
-                    st.session_state.sustainability = []
-                    st.error(str(e))
-                st.session_state.show_finish = False
-                rerun()
-            if col2.button("Abbrechen"):
-                st.session_state.show_finish = False
-                rerun()
+        confirm_finish()
 
     if st.session_state.get("sustainability"):
         st.header("Sustainability scores")
