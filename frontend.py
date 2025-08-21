@@ -126,8 +126,8 @@ else:
             index=list(proj_options.values()).index(st.session_state.project_id),
         )
         st.session_state.project_id = proj_options[selected]
-        st.session_state.r_strategies = proj_map[st.session_state.project_id].get(
-            "r_strategies", []
+        st.session_state.r_strategies = (
+            proj_map[st.session_state.project_id].get("r_strategies") or []
         )
     else:
         st.sidebar.write("No projects available")
@@ -311,7 +311,7 @@ elif page == "Components":
         volume = st.number_input("Volume", value=0.0)
         reusable = st.checkbox("Reusable")
         connection_type = st.number_input("Connection type", value=0, step=1)
-        r_strats = st.session_state.get("r_strategies", [])
+        r_strats = st.session_state.get("r_strategies") or []
         systemability = None
         r_factor = None
         trenn_eff = None
