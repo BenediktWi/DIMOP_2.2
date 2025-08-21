@@ -15,6 +15,7 @@ from sqlalchemy import (
     Boolean,
     inspect,
     text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import (
     declarative_base,
@@ -81,6 +82,17 @@ class Material(Base):
         back_populates="material",
         cascade="all, delete-orphan",
     )
+
+
+class MaterialCompatibility(Base):
+    __tablename__ = "material_compatibility"
+    __table_args__ = (UniqueConstraint("material_id_1", "material_id_2"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    material_id_1 = Column(Integer, ForeignKey("materials.id"), nullable=False)
+    material_id_2 = Column(Integer, ForeignKey("materials.id"), nullable=False)
+    mv_bonus = Column(Float, nullable=True)
+    mv_abzug = Column(Float, nullable=True)
 
 
 class Component(Base):
@@ -1019,6 +1031,61 @@ def evaluate_component(
     }
 
 
+def _weight_fractions(components: List[Component]) -> Dict[int, float]:
+    weights: Dict[int, float] = {}
+    for c in components:
+        w = c.get_weight() if hasattr(c, "get_weight") else (c.weight or 0.0)
+        weights[c.id] = w
+    total = sum(weights.values())
+    return {cid: (w / total if total > 0 else 0.0) for cid, w in weights.items()}
+
+
+def _gmv_terms(
+    components: List[Component],
+    fractions: Dict[int, float],
+    db: Session,
+) -> tuple[float, float, bool]:
+    inspector = inspect(db.bind)
+    has_table = "material_compatibility" in inspector.get_table_names()
+    gmv_bonus = 0.0
+    gmv_abzug = 0.0
+    contaminated = False
+    for i, ci in enumerate(components):
+        for cj in components[i + 1 :]:
+            m1, m2 = ci.material_id, cj.material_id
+            if not (m1 and m2):
+                continue
+            gf = fractions.get(ci.id, 0.0) * fractions.get(cj.id, 0.0)
+            mv_bonus = None
+            mv_abzug = None
+            if has_table:
+                m1, m2 = sorted([m1, m2])
+                pair = (
+                    db.query(MaterialCompatibility)
+                    .filter(
+                        MaterialCompatibility.material_id_1 == m1,
+                        MaterialCompatibility.material_id_2 == m2,
+                    )
+                    .first()
+                )
+                if pair:
+                    mv_bonus = pair.mv_bonus
+                    mv_abzug = pair.mv_abzug
+            if mv_bonus is None:
+                bonuses = [ci.mv_bonus, cj.mv_bonus]
+                bonuses = [b for b in bonuses if b is not None]
+                mv_bonus = sum(bonuses) / len(bonuses) if bonuses else 0.0
+            if mv_abzug is None:
+                abzuege = [ci.mv_abzug, cj.mv_abzug]
+                abzuege = [a for a in abzuege if a is not None]
+                mv_abzug = max(abzuege) if abzuege else 0.0
+            if mv_abzug == 3:
+                contaminated = True
+            gmv_bonus += gf * (mv_bonus or 0.0)
+            gmv_abzug += gf * (mv_abzug or 0.0)
+    return gmv_bonus, gmv_abzug, contaminated
+
+
 @app.post("/recycle/{project_id}")
 def recycle_evaluation(
     project_id: int,
@@ -1028,31 +1095,25 @@ def recycle_evaluation(
     components = db.query(Component).filter(Component.project_id == project_id).all()
     if not components:
         raise HTTPException(status_code=404, detail="No components found")
-    total_weight = sum((c.weight or 0.0) for c in components)
-    if total_weight == 0:
+
+    atomic = [c for c in components if c.is_atomic]
+    if not atomic:
+        return {"recycle_value": 0.0, "grade": "F"}
+    if any((c.material and c.material.is_dangerous) for c in atomic):
         return {"recycle_value": 0.0, "grade": "F"}
 
-    def weight_fraction(comp: Component) -> float:
-        return (comp.weight or 0.0) / total_weight
-
-    pW = sum(
-        (comp.r_factor or 0.0) * weight_fraction(comp) for comp in components
-    )
-    eta_trenn = sum(
-        (comp.trenn_eff or 0.0) * weight_fraction(comp) for comp in components
-    )
-    eta_sort = sum(
-        (comp.sort_eff or 0.0) * weight_fraction(comp) for comp in components
-    )
-    gmv_bonus = sum(
-        (comp.mv_bonus or 0.0) * weight_fraction(comp) for comp in components
-    )
-    gmv_abzug = sum(
-        (comp.mv_abzug or 0.0) * weight_fraction(comp) for comp in components
-    )
+    fractions = _weight_fractions(atomic)
+    pW = sum((c.r_factor or 0.0) * fractions.get(c.id, 0.0) for c in atomic)
+    eta_trenn = sum((c.trenn_eff or 0.0) * fractions.get(c.id, 0.0) for c in atomic)
+    eta_sort = sum((c.sort_eff or 0.0) * fractions.get(c.id, 0.0) for c in atomic)
+    gmv_bonus, gmv_abzug, contaminated = _gmv_terms(atomic, fractions, db)
+    if contaminated:
+        return {"recycle_value": 0.0, "grade": "F"}
 
     root = next((c for c in components if c.parent_id is None), components[0])
-    s_faeh = root.systemability or 0.0
+    s_faeh = 1.0 if (root.systemability or 0.0) >= 1 else 0.0
+    if s_faeh == 0.0:
+        return {"recycle_value": 0.0, "grade": "F"}
 
     r_val = s_faeh * pW * (eta_trenn * eta_sort + gmv_bonus - gmv_abzug)
     r_val = max(0.0, min(1.0, r_val))
