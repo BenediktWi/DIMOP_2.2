@@ -58,6 +58,7 @@ async def test_evaluation_endpoint(async_client_full_schema):
             "material_id": mat1_id,
             "volume": 0.5,
             "project_id": project_id,
+            "is_atomic": True,
         },
         headers=headers,
     )
@@ -71,6 +72,7 @@ async def test_evaluation_endpoint(async_client_full_schema):
             "parent_id": root_id,
             "volume": 0.25,
             "project_id": project_id,
+            "is_atomic": True,
         },
         headers=headers,
     )

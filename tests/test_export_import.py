@@ -50,7 +50,12 @@ async def test_export_import_roundtrip(async_client):
 
     comp_resp = await async_client.post(
         "/components",
-        json={"name": "Root", "material_id": material_id, "project_id": project_id},
+        json={
+            "name": "Root",
+            "material_id": material_id,
+            "project_id": project_id,
+            "is_atomic": True,
+        },
         headers=headers,
     )
     component_id = comp_resp.json()["id"]

@@ -44,7 +44,6 @@ async def _setup(client, headers, *, systemability=1.0, dangerous=False, mv_abzu
         json={
             "name": "Root",
             "project_id": project_id,
-            "material_id": mat1_id,
             "level": 0,
             "systemability": systemability,
         },
@@ -154,18 +153,6 @@ async def test_recycle_non_atomic_dangerous_ok(async_client_full_schema):
     )
     project_id = proj.json()["id"]
 
-    root_mat = await client.post(
-        "/materials",
-        json={
-            "name": "RootMat",
-            "project_id": project_id,
-            "density": 1.0,
-            "is_dangerous": True,
-        },
-        headers=headers,
-    )
-    root_mat_id = root_mat.json()["id"]
-
     mat1 = await client.post(
         "/materials",
         json={
@@ -194,7 +181,6 @@ async def test_recycle_non_atomic_dangerous_ok(async_client_full_schema):
         json={
             "name": "Root",
             "project_id": project_id,
-            "material_id": root_mat_id,
             "level": 0,
             "systemability": 1.0,
         },

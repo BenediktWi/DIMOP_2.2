@@ -212,6 +212,7 @@ async def test_update_component_material_no_project_id(async_client):
             "material_id": mat1.json()["id"],
             "volume": 3.0,
             "project_id": project_id,
+            "is_atomic": True,
         },
         headers=headers,
     )
@@ -256,6 +257,7 @@ async def test_startup_adds_component_columns(async_client_missing_columns):
             "name": "Root",
             "material_id": material_id,
             "project_id": project_id,
+            "is_atomic": True,
         },
         headers=headers,
     )
@@ -341,7 +343,12 @@ async def test_delete_material_cascades_components(async_client_full_schema):
 
     await async_client_full_schema.post(
         "/components",
-        json={"name": "Comp", "material_id": material_id, "project_id": project_id},
+        json={
+            "name": "Comp",
+            "material_id": material_id,
+            "project_id": project_id,
+            "is_atomic": True,
+        },
         headers=headers,
     )
 
