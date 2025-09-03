@@ -289,6 +289,50 @@ elif page == "Components":
     materials = get_materials()
     mat_dict = {m['name']: m['id'] for m in materials}
     components = get_components()
+    r_strats = st.session_state.get("r_strategies") or []
+
+    @st.dialog("Create from existing component")
+    def copy_component_dialog():
+        comp_options = {f"{c['name']} (id:{c['id']})": c for c in components}
+        sel = st.selectbox("Select component", list(comp_options.keys()))
+        new_name = st.text_input("New name")
+        col1, col2 = st.columns(2)
+        if col1.button("Create") and new_name:
+            orig = comp_options[sel]
+            fields = [
+                "material_id",
+                "level",
+                "parent_id",
+                "is_atomic",
+                "volume",
+                "reusable",
+                "connection_type",
+                "systemability",
+                "r_factor",
+                "trenn_eff",
+                "sort_eff",
+                "mv_bonus",
+                "mv_abzug",
+            ]
+            payload = {k: orig.get(k) for k in fields}
+            payload.update(
+                {
+                    "name": new_name,
+                    "project_id": st.session_state.get("project_id"),
+                }
+            )
+            res = requests.post(
+                f"{BACKEND_URL}/components",
+                json=payload,
+                headers=AUTH_HEADERS,
+            )
+            if res.ok:
+                st.success("Component created")
+                rerun()
+            else:
+                st.error(res.text)
+        if col2.button("Cancel"):
+            rerun()
 
     st.header("Create component")
     with st.form("create_component"):
@@ -315,7 +359,6 @@ elif page == "Components":
         reusable = st.checkbox("Reusable")
         connection_type = st.number_input("Connection type", value=0, step=1)
 
-        r_strats = st.session_state.get("r_strategies") or []
         systemability = None
         r_factor = None
         trenn_eff = None
@@ -425,6 +468,9 @@ elif page == "Components":
             else:
                 st.error(res.text)
 
+    if st.button("From existing Component"):
+        copy_component_dialog()
+
     st.header("Update component")
     if components:
         comp_options = {f"{c['name']} (id:{c['id']})": c for c in components}
@@ -498,6 +544,120 @@ elif page == "Components":
                 value=comp.get("connection_type", 0) or 0,
                 step=1,
             )
+            up_systemability = comp.get("systemability")
+            up_r_factor = comp.get("r_factor")
+            up_trenn_eff = comp.get("trenn_eff")
+            up_sort_eff = comp.get("sort_eff")
+            up_mv_bonus = comp.get("mv_bonus")
+            up_mv_abzug = comp.get("mv_abzug")
+            if "R8" in r_strats:
+                sys_map = {
+                    "systemfähig": 1.0,
+                    "potenziell systemfähig": 1.0,
+                    "nicht systemfähig": 0.0,
+                }
+                sys_vals = list(sys_map.values())
+                sys_idx = (
+                    sys_vals.index(up_systemability)
+                    if up_systemability in sys_vals
+                    else 0
+                )
+                up_systemability = sys_map[
+                    st.selectbox("System ability", list(sys_map.keys()), index=sys_idx)
+                ]
+                r_map = {
+                    "Cloosed loop": 1.0,
+                    "Open Loop / downcycling": 0.9,
+                    "filler valorization": 0.3,
+                    "thermal recovery": 0.0,
+                }
+                r_vals = list(r_map.values())
+                r_idx = (
+                    r_vals.index(up_r_factor)
+                    if up_r_factor in r_vals
+                    else 0
+                )
+                up_r_factor = r_map[
+                    st.selectbox(
+                        "Recyclingroute/ r-Faktor",
+                        list(r_map.keys()),
+                        index=r_idx,
+                    )
+                ]
+                tr_map = {
+                    "Single-variety / without additives": 1.0,
+                    "Completely detachable by hand": 0.95,
+                    "Mechanically detachable": 0.90,
+                    "Only via shredding": 0.85,
+                    "Not separable/ Compound": 0.0,
+                }
+                tr_vals = list(tr_map.values())
+                tr_idx = (
+                    tr_vals.index(up_trenn_eff)
+                    if up_trenn_eff in tr_vals
+                    else 0
+                )
+                up_trenn_eff = tr_map[
+                    st.selectbox(
+                        "Separation efficiency",
+                        list(tr_map.keys()),
+                        index=tr_idx,
+                    )
+                ]
+                sort_map = {
+                    "Sorting exclusion (criteria fulfilled)": 0.0,
+                    "unreliably sortable": 0.7,
+                    "Sorting with 2 MK": 0.95,
+                    "Sorting with 3 MK": 0.9,
+                    "No sorting necessary / pure": 1.0,
+                }
+                sort_vals = list(sort_map.values())
+                sort_idx = (
+                    sort_vals.index(up_sort_eff)
+                    if up_sort_eff in sort_vals
+                    else 0
+                )
+                up_sort_eff = sort_map[
+                    st.selectbox("Sorting efficiency", list(sort_map.keys()), index=sort_idx)
+                ]
+                mv_bonus_map = {
+                    "None": 0.0,
+                    "MV 0.25 → 2.5": 2.5,
+                    "MV 0.50 → 5.0": 5.0,
+                    "MV 0.75 → 7.5": 7.5,
+                    "MV 1.00 → 10.0": 10.0,
+                }
+                mv_bonus_vals = list(mv_bonus_map.values())
+                mv_bonus_idx = (
+                    mv_bonus_vals.index(up_mv_bonus)
+                    if up_mv_bonus in mv_bonus_vals
+                    else 0
+                )
+                up_mv_bonus = mv_bonus_map[
+                    st.selectbox(
+                        "Materialverträglichkeit-Bonus",
+                        list(mv_bonus_map.keys()),
+                        index=mv_bonus_idx,
+                    )
+                ]
+                mv_abzug_map = {
+                    "kein Abzug": 0.0,
+                    "unverträglich": -2.0,
+                    "kontaminierend (MV-2 oder MV-3)": -3.0,
+                }
+                mv_abzug_vals = list(mv_abzug_map.values())
+                mv_abzug_idx = (
+                    mv_abzug_vals.index(up_mv_abzug)
+                    if up_mv_abzug in mv_abzug_vals
+                    else 0
+                )
+                up_mv_abzug = mv_abzug_map[
+                    st.selectbox(
+                        "Störstoffe/Kontamination – Abzug",
+                        list(mv_abzug_map.keys()),
+                        index=mv_abzug_idx,
+                    )
+                ]
             updated = st.form_submit_button("Update")
             if updated:
                 res = requests.put(
@@ -512,6 +672,18 @@ elif page == "Components":
                         "volume": up_volume,
                         "reusable": up_reusable,
                         "connection_type": up_conn,
+                        **(
+                            {
+                                "systemability": up_systemability,
+                                "r_factor": up_r_factor,
+                                "trenn_eff": up_trenn_eff,
+                                "sort_eff": up_sort_eff,
+                                "mv_bonus": up_mv_bonus,
+                                "mv_abzug": up_mv_abzug,
+                            }
+                            if "R8" in r_strats
+                            else {}
+                        ),
                     },
                     headers=AUTH_HEADERS,
                 )
