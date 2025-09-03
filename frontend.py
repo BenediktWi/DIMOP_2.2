@@ -294,7 +294,11 @@ elif page == "Components":
     @st.dialog("Create from existing component")
     def copy_component_dialog():
         comp_options = {f"{c['name']} (id:{c['id']})": c for c in components}
-        sel = st.selectbox("Select component", list(comp_options.keys()))
+        sel = st.selectbox(
+            "Select component",
+            list(comp_options.keys()),
+            key="copy_component_select",
+        )
         new_name = st.text_input("New name")
         col1, col2 = st.columns(2)
         if col1.button("Create") and new_name:
@@ -474,7 +478,11 @@ elif page == "Components":
     st.header("Update component")
     if components:
         comp_options = {f"{c['name']} (id:{c['id']})": c for c in components}
-        selected = st.selectbox("Select component", list(comp_options.keys()))
+        selected = st.selectbox(
+            "Select component",
+            list(comp_options.keys()),
+            key="update_component_select",
+        )
         comp = comp_options[selected]
         with st.form("update_component"):
             up_name = st.text_input("Name", comp["name"])
