@@ -372,46 +372,37 @@ elif page == "Components":
     mv_abzug = 0.0
     if "R8" in r_strats:
         sys_map = {
-            "systemfähig": 1.0,
-            "potenziell systemfähig": 1.0,
-            "nicht systemfähig": 0.0,
+            "system-compatible": 1.0,
+            "potentially system-compatible": 1.0,
+            "not system-compatible": 0.0,
         }
         systemability = sys_map[
             st.selectbox("System ability", list(sys_map.keys()), key="create_systemability")
         ]
-        r_factor = {
-            "Cloosed loop": 1.0,
-            "Open Loop / downcycling": 0.9,
-            "filler valorization": 0.3,
-            "thermal recovery": 0.0,
-        }[
+        r_map = {
+            "Recycling as a high-quality material for the same product category": 1.0,
+            "Down-Cycling as a material with material input for other product categories": 0.9,
+            "Down-Cycling as filler for other applications": 0.3,
+            "waste-to-energy": 0.0,
+        }
+        r_factor = r_map[
             st.selectbox(
-                "Recyclingroute/ r-Faktor",
-                list({
-                    "Cloosed loop": 1.0,
-                    "Open Loop / downcycling": 0.9,
-                    "filler valorization": 0.3,
-                    "thermal recovery": 0.0,
-                }.keys()),
+                "recyclability potential",
+                list(r_map.keys()),
                 key="create_r_factor",
             )
         ]
-        trenn_eff = {
-            "Single-variety / without additives": 1.0,
-            "Completely detachable by hand": 0.95,
-            "Mechanically detachable": 0.90,
-            "Only via shredding": 0.85,
-            "Not separable/ Compound": 0.0,
-        }[
+        tr_map = {
+            "mono-material and free from additives or usage residues": 1.0,
+            "Components are completely separated by hand": 0.95,
+            "Mechanically separable by impact or shock": 0.90,
+            "separable by using shredding machines (shredder, mill)": 0.85,
+            "composite materials, inseparable within the product": 0.0,
+        }
+        trenn_eff = tr_map[
             st.selectbox(
                 "Separation efficiency",
-                list({
-                    "Single-variety / without additives": 1.0,
-                    "Completely detachable by hand": 0.95,
-                    "Mechanically detachable": 0.90,
-                    "Only via shredding": 0.85,
-                    "Not separable/ Compound": 0.0,
-                }.keys()),
+                list(tr_map.keys()),
                 key="create_trenn_eff",
             )
         ]
@@ -589,9 +580,9 @@ elif page == "Components":
             up_mv_abzug = comp.get("mv_abzug")
             if "R8" in r_strats:
                 sys_map = {
-                    "systemfähig": 1.0,
-                    "potenziell systemfähig": 1.0,
-                    "nicht systemfähig": 0.0,
+                    "system-compatible": 1.0,
+                    "potentially system-compatible": 1.0,
+                    "not system-compatible": 0.0,
                 }
                 sys_vals = list(sys_map.values())
                 sys_idx = (
@@ -603,10 +594,10 @@ elif page == "Components":
                     st.selectbox("System ability", list(sys_map.keys()), index=sys_idx)
                 ]
                 r_map = {
-                    "Cloosed loop": 1.0,
-                    "Open Loop / downcycling": 0.9,
-                    "filler valorization": 0.3,
-                    "thermal recovery": 0.0,
+                    "Recycling as a high-quality material for the same product category": 1.0,
+                    "Down-Cycling as a material with material input for other product categories": 0.9,
+                    "Down-Cycling as filler for other applications": 0.3,
+                    "waste-to-energy": 0.0,
                 }
                 r_vals = list(r_map.values())
                 r_idx = (
@@ -616,17 +607,17 @@ elif page == "Components":
                 )
                 up_r_factor = r_map[
                     st.selectbox(
-                        "Recyclingroute/ r-Faktor",
+                        "recyclability potential",
                         list(r_map.keys()),
                         index=r_idx,
                     )
                 ]
                 tr_map = {
-                    "Single-variety / without additives": 1.0,
-                    "Completely detachable by hand": 0.95,
-                    "Mechanically detachable": 0.90,
-                    "Only via shredding": 0.85,
-                    "Not separable/ Compound": 0.0,
+                    "mono-material and free from additives or usage residues": 1.0,
+                    "Components are completely separated by hand": 0.95,
+                    "Mechanically separable by impact or shock": 0.90,
+                    "separable by using shredding machines (shredder, mill)": 0.85,
+                    "composite materials, inseparable within the product": 0.0,
                 }
                 tr_vals = list(tr_map.values())
                 tr_idx = (
