@@ -487,7 +487,7 @@ elif page == "Components":
                             "mv_abzug": mv_abzug,
                         }
                         if "R8" in r_strats
-                        else {},
+                        else {}
                     ),
                 }
                 if is_atomic:
