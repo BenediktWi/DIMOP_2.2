@@ -25,13 +25,12 @@ def test_compute_component_score_hierarchy():
         volume=1.0,
         weight=2.0,
         reusable=False,
-        connection_type=1,
         material=mat,
     )
     root.children.append(child)
     child.parent = root
     score = compute_component_score(root)
-    assert pytest.approx(score) == 9.5
+    assert pytest.approx(score) == 10.0
 
 
 def test_compute_component_score_volume_density():
@@ -49,10 +48,9 @@ def test_compute_component_score_default_weight_non_atomic():
         name="root",
         is_atomic=False,
         reusable=False,
-        connection_type=1,
         material=mat,
     )
     root.children.append(child)
     child.parent = root
     score = compute_component_score(root)
-    assert pytest.approx(score) == 4.75
+    assert pytest.approx(score) == 5.0

@@ -310,7 +310,6 @@ elif page == "Components":
                 "is_atomic",
                 "volume",
                 "reusable",
-                "connection_type",
                 "systemability",
                 "r_factor",
                 "trenn_eff",
@@ -341,11 +340,11 @@ elif page == "Components":
     st.header("Create component")
     with st.form("create_component"):
         name = st.text_input("Name")
-        mat_name = (
-            st.selectbox("Material", list(mat_dict.keys()))
-            if mat_dict
-            else ""
-        )
+        is_atomic = st.checkbox("Atomic")
+        if is_atomic and mat_dict:
+            mat_name = st.selectbox("Material", list(mat_dict.keys()))
+        else:
+            mat_name = ""
         level = int(st.number_input("Level", value=0, step=1))
         parent_candidates = [
             c for c in components if c.get("level") == level - 1
@@ -358,10 +357,8 @@ elif page == "Components":
             },
         }
         parent_sel = st.selectbox("Parent component", list(parent_map.keys()))
-        is_atomic = st.checkbox("Atomic")
         volume = st.number_input("Volume", value=0.0)
         reusable = st.checkbox("Reusable")
-        connection_type = st.number_input("Connection type", value=0, step=1)
 
         systemability = None
         r_factor = None
@@ -438,32 +435,33 @@ elif page == "Components":
                 "kontaminierend (MV-2 oder MV-3)",
             ])]
         submitted = st.form_submit_button("Create")
-        if submitted and name and mat_dict:
+        if submitted and name and (not is_atomic or mat_dict):
+            payload = {
+                "name": name,
+                "project_id": st.session_state.get("project_id"),
+                "level": level,
+                "parent_id": parent_map[parent_sel],
+                "is_atomic": is_atomic,
+                "volume": volume,
+                "reusable": reusable,
+                **(
+                    {
+                        "systemability": systemability,
+                        "r_factor": r_factor,
+                        "trenn_eff": trenn_eff,
+                        "sort_eff": sort_eff,
+                        "mv_bonus": mv_bonus,
+                        "mv_abzug": mv_abzug,
+                    }
+                    if "R8" in r_strats
+                    else {}
+                ),
+            }
+            if is_atomic and mat_dict:
+                payload["material_id"] = mat_dict[mat_name]
             res = requests.post(
                 f"{BACKEND_URL}/components",
-                json={
-                    "name": name,
-                    "project_id": st.session_state.get("project_id"),
-                    "material_id": mat_dict[mat_name],
-                    "level": level,
-                    "parent_id": parent_map[parent_sel],
-                    "is_atomic": is_atomic,
-                    "volume": volume,
-                    "reusable": reusable,
-                    "connection_type": connection_type,
-                    **(
-                        {
-                            "systemability": systemability,
-                            "r_factor": r_factor,
-                            "trenn_eff": trenn_eff,
-                            "sort_eff": sort_eff,
-                            "mv_bonus": mv_bonus,
-                            "mv_abzug": mv_abzug,
-                        }
-                        if "R8" in r_strats
-                        else {}
-                    ),
-                },
+                json=payload,
                 headers=AUTH_HEADERS,
             )
             if res.ok:
@@ -486,26 +484,6 @@ elif page == "Components":
         comp = comp_options[selected]
         with st.form("update_component"):
             up_name = st.text_input("Name", comp["name"])
-            mat_names = list(mat_dict.keys())
-            mat_idx = (
-                mat_names.index(
-                    next(
-                        (
-                            n
-                            for n, i in mat_dict.items()
-                            if i == comp['material_id']
-                        ),
-                        mat_names[0],
-                    )
-                )
-                if mat_dict
-                else 0
-            )
-            up_mat = (
-                st.selectbox("Material", mat_names, index=mat_idx)
-                if mat_dict
-                else ""
-            )
             up_level = int(
                 st.number_input(
                     "Level",
@@ -539,6 +517,25 @@ elif page == "Components":
                 "Atomic",
                 value=comp.get("is_atomic", False),
             )
+            mat_names = list(mat_dict.keys())
+            mat_idx = (
+                mat_names.index(
+                    next(
+                        (
+                            n
+                            for n, i in mat_dict.items()
+                            if i == comp['material_id']
+                        ),
+                        mat_names[0] if mat_names else "",
+                    )
+                )
+                if mat_dict
+                else 0
+            )
+            if up_atomic and mat_dict:
+                up_mat = st.selectbox("Material", mat_names, index=mat_idx)
+            else:
+                up_mat = ""
             up_volume = st.number_input(
                 "Volume",
                 value=comp.get("volume", 0.0) or 0.0,
@@ -546,11 +543,6 @@ elif page == "Components":
             up_reusable = st.checkbox(
                 "Reusable",
                 value=comp.get("reusable", False),
-            )
-            up_conn = st.number_input(
-                "Connection type",
-                value=comp.get("connection_type", 0) or 0,
-                step=1,
             )
             up_systemability = comp.get("systemability")
             up_r_factor = comp.get("r_factor")
@@ -668,31 +660,32 @@ elif page == "Components":
                 ]
             updated = st.form_submit_button("Update")
             if updated:
+                payload = {
+                    "name": up_name,
+                    "project_id": st.session_state.get("project_id"),
+                    "level": up_level,
+                    "parent_id": parent_map[up_parent],
+                    "is_atomic": up_atomic,
+                    "volume": up_volume,
+                    "reusable": up_reusable,
+                    **(
+                        {
+                            "systemability": up_systemability,
+                            "r_factor": up_r_factor,
+                            "trenn_eff": up_trenn_eff,
+                            "sort_eff": up_sort_eff,
+                            "mv_bonus": up_mv_bonus,
+                            "mv_abzug": up_mv_abzug,
+                        }
+                        if "R8" in r_strats
+                        else {}
+                    ),
+                }
+                if up_atomic and mat_dict:
+                    payload["material_id"] = mat_dict.get(up_mat)
                 res = requests.put(
                     f"{BACKEND_URL}/components/{comp['id']}",
-                    json={
-                        "name": up_name,
-                        "project_id": st.session_state.get("project_id"),
-                        "material_id": mat_dict.get(up_mat),
-                        "level": up_level,
-                        "parent_id": parent_map[up_parent],
-                        "is_atomic": up_atomic,
-                        "volume": up_volume,
-                        "reusable": up_reusable,
-                        "connection_type": up_conn,
-                        **(
-                            {
-                                "systemability": up_systemability,
-                                "r_factor": up_r_factor,
-                                "trenn_eff": up_trenn_eff,
-                                "sort_eff": up_sort_eff,
-                                "mv_bonus": up_mv_bonus,
-                                "mv_abzug": up_mv_abzug,
-                            }
-                            if "R8" in r_strats
-                            else {}
-                        ),
-                    },
+                    json=payload,
                     headers=AUTH_HEADERS,
                 )
                 if res.ok:
