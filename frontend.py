@@ -339,7 +339,14 @@ elif page == "Components":
 
     st.header("Create component")
     name = st.text_input("Name")
-    level = int(st.number_input("Level", value=0, step=1))
+    st.number_input(
+        "Level",
+        value=st.session_state.get("create_level", 0),
+        step=1,
+        key="create_level",
+        on_change=rerun,
+    )
+    level = int(st.session_state.get("create_level", 0))
     is_atomic = st.checkbox("Is Atomic?", key="create_is_atomic")
     mat_name = (
         st.selectbox("Material", list(mat_dict.keys()), key="create_material")
