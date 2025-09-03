@@ -338,164 +338,170 @@ elif page == "Components":
             rerun()
 
     st.header("Create component")
-    name = st.text_input("Name")
-    st.number_input(
-        "Level",
-        value=st.session_state.get("create_level", 0),
-        step=1,
-        key="create_level",
-        on_change=rerun,
-    )
-    level = int(st.session_state.get("create_level", 0))
-    is_atomic = st.checkbox("Is Atomic?", key="create_is_atomic")
-    mat_name = (
-        st.selectbox("Material", list(mat_dict.keys()), key="create_material")
-        if is_atomic and mat_dict
-        else ""
-    )
-    volume = st.number_input("Volume", value=0.0)
-    parent_candidates = [
-        c for c in components if c.get("level") == level - 1
-    ]
-    parent_map = {
-        "None": None,
-        **{f"{c['name']} (id:{c['id']})": c["id"] for c in parent_candidates},
-    }
-    parent_sel = st.selectbox("Parent component", list(parent_map.keys()))
-    reusable = st.checkbox("Is Reusable?", key="create_reusable")
+    with st.form("create_component"):
+        name = st.text_input("Name")
+        st.number_input(
+            "Level",
+            value=st.session_state.get("create_level", 0),
+            step=1,
+            key="create_level",
+            on_change=rerun,
+        )
+        level = int(st.session_state.get("create_level", 0))
+        is_atomic = st.checkbox("Atomic", key="create_is_atomic")
+        mat_name = (
+            st.selectbox("Material", list(mat_dict.keys()), key="create_material")
+            if is_atomic and mat_dict
+            else ""
+        )
+        volume = st.number_input("Volume", value=0.0)
+        parent_candidates = [
+            c for c in components if c.get("level") == level - 1
+        ]
+        parent_map = {
+            "None": None,
+            **{f"{c['name']} (id:{c['id']})": c["id"] for c in parent_candidates},
+        }
+        parent_sel = st.selectbox("Parent component", list(parent_map.keys()))
+        reusable = st.checkbox("Resuable", key="create_reusable")
 
-    systemability = None
-    r_factor = None
-    trenn_eff = None
-    sort_eff = None
-    mv_bonus = 0.0
-    mv_abzug = 0.0
-    if "R8" in r_strats:
-        sys_map = {
-            "system-compatible": 1.0,
-            "potentially system-compatible": 1.0,
-            "not system-compatible": 0.0,
-        }
-        systemability = sys_map[
-            st.selectbox("System ability", list(sys_map.keys()), key="create_systemability")
-        ]
-        r_map = {
-            "Recycling as a high-quality material for the same product category": 1.0,
-            "Down-Cycling as a material with material input for other product categories": 0.9,
-            "Down-Cycling as filler for other applications": 0.3,
-            "waste-to-energy": 0.0,
-        }
-        r_factor = r_map[
-            st.selectbox(
-                "recyclability potential",
-                list(r_map.keys()),
-                key="create_r_factor",
-            )
-        ]
-        tr_map = {
-            "mono-material and free from additives or usage residues": 1.0,
-            "Components are completely separated by hand": 0.95,
-            "Mechanically separable by impact or shock": 0.90,
-            "separable by using shredding machines (shredder, mill)": 0.85,
-            "composite materials, inseparable within the product": 0.0,
-        }
-        trenn_eff = tr_map[
-            st.selectbox(
-                "Separation efficiency",
-                list(tr_map.keys()),
-                key="create_trenn_eff",
-            )
-        ]
-        sort_eff = {
-            "Sorting exclusion (criteria fulfilled)": 0.0,
-            "unreliably sortable": 0.7,
-            "Sorting with 2 MK": 0.95,
-            "Sorting with 3 MK": 0.9,
-            "No sorting necessary / pure": 1.0,
-        }[
-            st.selectbox(
-                "Sorting efficiency",
-                list({
-                    "Sorting exclusion (criteria fulfilled)": 0.0,
-                    "unreliably sortable": 0.7,
-                    "Sorting with 2 MK": 0.95,
-                    "Sorting with 3 MK": 0.9,
-                    "No sorting necessary / pure": 1.0,
-                }.keys()),
-                key="create_sort_eff",
-            )
-        ]
-        mv_bonus = {
-            "None": 0.0,
-            "MV 0.25 → 2.5": 2.5,
-            "MV 0.50 → 5.0": 5.0,
-            "MV 0.75 → 7.5": 7.5,
-            "MV 1.00 → 10.0": 10.0,
-        }[
-            st.selectbox(
-                "Materialverträglichkeit-Bonus",
-                [
-                    "None",
-                    "MV 0.25 → 2.5",
-                    "MV 0.50 → 5.0",
-                    "MV 0.75 → 7.5",
-                    "MV 1.00 → 10.0",
-                ],
-                key="create_mv_bonus",
-            )
-        ]
-        mv_abzug = {
-            "kein Abzug": 0.0,
-            "unverträglich": -2.0,
-            "kontaminierend (MV-2 oder MV-3)": -3.0,
-        }[
-            st.selectbox(
-                "Störstoffe/Kontamination – Abzug",
-                [
-                    "kein Abzug",
-                    "unverträglich",
-                    "kontaminierend (MV-2 oder MV-3)",
-                ],
-                key="create_mv_abzug",
-            )
-        ]
-    if st.button("Create", key="create_submit") and name:
-        if is_atomic and (not mat_dict or not mat_name):
-            st.error("Material required for atomic component")
-        else:
-            payload = {
-                "name": name,
-                "project_id": st.session_state.get("project_id"),
-                "level": level,
-                "parent_id": parent_map[parent_sel],
-                "is_atomic": is_atomic,
-                "volume": volume,
-                "reusable": reusable,
-                **(
-                    {
-                        "systemability": systemability,
-                        "r_factor": r_factor,
-                        "trenn_eff": trenn_eff,
-                        "sort_eff": sort_eff,
-                        "mv_bonus": mv_bonus,
-                        "mv_abzug": mv_abzug,
-                    }
-                    if "R8" in r_strats
-                    else {},
-                ),
+        systemability = None
+        r_factor = None
+        trenn_eff = None
+        sort_eff = None
+        mv_bonus = 0.0
+        mv_abzug = 0.0
+        if "R8" in r_strats:
+            sys_map = {
+                "system-compatible": 1.0,
+                "potentially system-compatible": 1.0,
+                "not system-compatible": 0.0,
             }
-            if is_atomic:
-                payload["material_id"] = mat_dict[mat_name]
-            res = requests.post(
-                f"{BACKEND_URL}/components",
-                json=payload,
-                headers=AUTH_HEADERS,
-            )
-            if res.ok:
-                st.success("Component created")
-                rerun()
+            systemability = sys_map[
+                st.selectbox(
+                    "System ability", list(sys_map.keys()), key="create_systemability"
+                )
+            ]
+            r_map = {
+                "Recycling as a high-quality material for the same product category": 1.0,
+                "Down-Cycling as a material with material input for other product categories": 0.9,
+                "Down-Cycling as filler for other applications": 0.3,
+                "waste-to-energy": 0.0,
+            }
+            r_factor = r_map[
+                st.selectbox(
+                    "recyclability potential",
+                    list(r_map.keys()),
+                    key="create_r_factor",
+                )
+            ]
+            tr_map = {
+                "mono-material and free from additives or usage residues": 1.0,
+                "Components are completely separated by hand": 0.95,
+                "Mechanically separable by impact or shock": 0.90,
+                "separable by using shredding machines (shredder, mill)": 0.85,
+                "composite materials, inseparable within the product": 0.0,
+            }
+            trenn_eff = tr_map[
+                st.selectbox(
+                    "Separation efficiency",
+                    list(tr_map.keys()),
+                    key="create_trenn_eff",
+                )
+            ]
+            sort_eff = {
+                "Sorting exclusion (criteria fulfilled)": 0.0,
+                "unreliably sortable": 0.7,
+                "Sorting with 2 MK": 0.95,
+                "Sorting with 3 MK": 0.9,
+                "No sorting necessary / pure": 1.0,
+            }[
+                st.selectbox(
+                    "Sorting efficiency",
+                    list(
+                        {
+                            "Sorting exclusion (criteria fulfilled)": 0.0,
+                            "unreliably sortable": 0.7,
+                            "Sorting with 2 MK": 0.95,
+                            "Sorting with 3 MK": 0.9,
+                            "No sorting necessary / pure": 1.0,
+                        }.keys()
+                    ),
+                    key="create_sort_eff",
+                )
+            ]
+            mv_bonus = {
+                "None": 0.0,
+                "MV 0.25 → 2.5": 2.5,
+                "MV 0.50 → 5.0": 5.0,
+                "MV 0.75 → 7.5": 7.5,
+                "MV 1.00 → 10.0": 10.0,
+            }[
+                st.selectbox(
+                    "Materialverträglichkeit-Bonus",
+                    [
+                        "None",
+                        "MV 0.25 → 2.5",
+                        "MV 0.50 → 5.0",
+                        "MV 0.75 → 7.5",
+                        "MV 1.00 → 10.0",
+                    ],
+                    key="create_mv_bonus",
+                )
+            ]
+            mv_abzug = {
+                "kein Abzug": 0.0,
+                "unverträglich": -2.0,
+                "kontaminierend (MV-2 oder MV-3)": -3.0,
+            }[
+                st.selectbox(
+                    "Störstoffe/Kontamination – Abzug",
+                    [
+                        "kein Abzug",
+                        "unverträglich",
+                        "kontaminierend (MV-2 oder MV-3)",
+                    ],
+                    key="create_mv_abzug",
+                )
+            ]
+        submitted = st.form_submit_button("Create", key="create_submit")
+        if submitted and name:
+            if is_atomic and (not mat_dict or not mat_name):
+                st.error("Material required for atomic component")
             else:
-                st.error(res.text)
+                payload = {
+                    "name": name,
+                    "project_id": st.session_state.get("project_id"),
+                    "level": level,
+                    "parent_id": parent_map[parent_sel],
+                    "is_atomic": is_atomic,
+                    "volume": volume,
+                    "reusable": reusable,
+                    **(
+                        {
+                            "systemability": systemability,
+                            "r_factor": r_factor,
+                            "trenn_eff": trenn_eff,
+                            "sort_eff": sort_eff,
+                            "mv_bonus": mv_bonus,
+                            "mv_abzug": mv_abzug,
+                        }
+                        if "R8" in r_strats
+                        else {},
+                    ),
+                }
+                if is_atomic:
+                    payload["material_id"] = mat_dict[mat_name]
+                res = requests.post(
+                    f"{BACKEND_URL}/components",
+                    json=payload,
+                    headers=AUTH_HEADERS,
+                )
+                if res.ok:
+                    st.success("Component created")
+                    rerun()
+                else:
+                    st.error(res.text)
 
     if st.button("From existing Component"):
         copy_component_dialog()
@@ -569,7 +575,7 @@ elif page == "Components":
                 index=parent_idx,
             )
             up_reusable = st.checkbox(
-                "Is Reusable?",
+                "Resuable",
                 value=comp.get("reusable", False),
             )
             up_systemability = comp.get("systemability")
