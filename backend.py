@@ -258,7 +258,7 @@ class MaterialRead(MaterialBase):
 
 class ComponentBase(BaseModel):
     name: str
-    material_id: int
+    material_id: Optional[int] = None
     level: Optional[int] = None
     parent_id: Optional[int] = None
     is_atomic: Optional[bool] = None
@@ -582,12 +582,15 @@ def create_component(
 ):
     if not db.get(Project, component.project_id):
         raise HTTPException(status_code=400, detail="Project does not exist")
-    material = db.get(Material, component.material_id)
-    if not material:
-        raise HTTPException(
-            status_code=400,
-            detail="Material does not exist",
-        )
+    material = db.get(Material, component.material_id) if component.material_id else None
+    if component.is_atomic:
+        if not material:
+            raise HTTPException(
+                status_code=400,
+                detail="Material does not exist",
+            )
+    else:
+        material = None
     if component.parent_id and not db.get(
         Component,
         component.parent_id,
@@ -596,8 +599,11 @@ def create_component(
             status_code=400,
             detail="Parent component does not exist",
         )
-    db_component = Component(**component.dict())
-    if db_component.volume is not None and material.density is not None:
+    data = component.dict()
+    if not component.is_atomic:
+        data["material_id"] = None
+    db_component = Component(**data)
+    if material and db_component.volume is not None and material.density is not None:
         db_component.weight = db_component.volume * material.density
     db.add(db_component)
     db.commit()
@@ -637,9 +643,9 @@ def update_component(
     component = db.get(Component, component_id)
     if not component:
         raise HTTPException(status_code=404, detail="Component not found")
-    if component_update.material_id and not db.get(
-        Material,
-        component_update.material_id,
+    if (
+        component_update.material_id is not None
+        and not db.get(Material, component_update.material_id)
     ):
         raise HTTPException(
             status_code=400,
@@ -655,6 +661,13 @@ def update_component(
         )
     for key, value in component_update.dict(exclude_unset=True).items():
         setattr(component, key, value)
+    if component.is_atomic and not component.material_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Atomic component must have material",
+        )
+    if not component.is_atomic:
+        component.material_id = None
     material = db.get(Material, component.material_id)
     if component.volume is not None and material and material.density is not None:
         component.weight = component.volume * material.density

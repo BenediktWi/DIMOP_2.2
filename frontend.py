@@ -340,12 +340,14 @@ elif page == "Components":
     st.header("Create component")
     with st.form("create_component"):
         name = st.text_input("Name")
+        level = int(st.number_input("Level", value=0, step=1))
+        is_atomic = st.checkbox("Is Atomic?")
         mat_name = (
             st.selectbox("Material", list(mat_dict.keys()))
-            if mat_dict
+            if is_atomic and mat_dict
             else ""
         )
-        level = int(st.number_input("Level", value=0, step=1))
+        volume = st.number_input("Volume", value=0.0)
         parent_candidates = [
             c for c in components if c.get("level") == level - 1
         ]
@@ -357,9 +359,7 @@ elif page == "Components":
             },
         }
         parent_sel = st.selectbox("Parent component", list(parent_map.keys()))
-        is_atomic = st.checkbox("Atomic")
-        volume = st.number_input("Volume", value=0.0)
-        reusable = st.checkbox("Reusable")
+        reusable = st.checkbox("Is Reusable?")
 
         systemability = None
         r_factor = None
@@ -436,13 +436,13 @@ elif page == "Components":
                 "kontaminierend (MV-2 oder MV-3)",
             ])]
         submitted = st.form_submit_button("Create")
-        if submitted and name and mat_dict:
-            res = requests.post(
-                f"{BACKEND_URL}/components",
-                json={
+        if submitted and name:
+            if is_atomic and (not mat_dict or not mat_name):
+                st.error("Material required for atomic component")
+            else:
+                payload = {
                     "name": name,
                     "project_id": st.session_state.get("project_id"),
-                    "material_id": mat_dict[mat_name],
                     "level": level,
                     "parent_id": parent_map[parent_sel],
                     "is_atomic": is_atomic,
@@ -460,14 +460,19 @@ elif page == "Components":
                         if "R8" in r_strats
                         else {}
                     ),
-                },
-                headers=AUTH_HEADERS,
-            )
-            if res.ok:
-                st.success("Component created")
-                rerun()
-            else:
-                st.error(res.text)
+                }
+                if is_atomic:
+                    payload["material_id"] = mat_dict[mat_name]
+                res = requests.post(
+                    f"{BACKEND_URL}/components",
+                    json=payload,
+                    headers=AUTH_HEADERS,
+                )
+                if res.ok:
+                    st.success("Component created")
+                    rerun()
+                else:
+                    st.error(res.text)
 
     if st.button("From existing Component"):
         copy_component_dialog()
@@ -483,6 +488,17 @@ elif page == "Components":
         comp = comp_options[selected]
         with st.form("update_component"):
             up_name = st.text_input("Name", comp["name"])
+            up_level = int(
+                st.number_input(
+                    "Level",
+                    value=comp.get("level", 0) or 0,
+                    step=1,
+                )
+            )
+            up_atomic = st.checkbox(
+                "Atomic",
+                value=comp.get("is_atomic", False),
+            )
             mat_names = list(mat_dict.keys())
             mat_idx = (
                 mat_names.index(
@@ -495,20 +511,17 @@ elif page == "Components":
                         mat_names[0],
                     )
                 )
-                if mat_dict
+                if mat_dict and comp.get("material_id") in mat_dict.values()
                 else 0
             )
             up_mat = (
                 st.selectbox("Material", mat_names, index=mat_idx)
-                if mat_dict
+                if up_atomic and mat_dict
                 else ""
             )
-            up_level = int(
-                st.number_input(
-                    "Level",
-                    value=comp.get("level", 0) or 0,
-                    step=1,
-                )
+            up_volume = st.number_input(
+                "Volume",
+                value=comp.get("volume", 0.0) or 0.0,
             )
             parent_candidates = [
                 c
@@ -532,16 +545,8 @@ elif page == "Components":
                 list(parent_map.keys()),
                 index=parent_idx,
             )
-            up_atomic = st.checkbox(
-                "Atomic",
-                value=comp.get("is_atomic", False),
-            )
-            up_volume = st.number_input(
-                "Volume",
-                value=comp.get("volume", 0.0) or 0.0,
-            )
             up_reusable = st.checkbox(
-                "Reusable",
+                "Is Reusable?",
                 value=comp.get("reusable", False),
             )
             up_systemability = comp.get("systemability")
