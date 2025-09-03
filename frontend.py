@@ -338,10 +338,10 @@ elif page == "Components":
             rerun()
 
     st.header("Create component")
+    st.checkbox("Atomic", key="create_is_atomic", on_change=rerun)
     with st.form("create_component"):
         name = st.text_input("Name")
-        is_atomic = st.checkbox("Atomic")
-        if is_atomic and mat_dict:
+        if st.session_state.create_is_atomic and mat_dict:
             mat_name = st.selectbox("Material", list(mat_dict.keys()))
         else:
             mat_name = ""
@@ -435,13 +435,15 @@ elif page == "Components":
                 "kontaminierend (MV-2 oder MV-3)",
             ])]
         submitted = st.form_submit_button("Create")
-        if submitted and name and (not is_atomic or mat_dict):
+        if submitted and name and (
+            not st.session_state.create_is_atomic or mat_dict
+        ):
             payload = {
                 "name": name,
                 "project_id": st.session_state.get("project_id"),
                 "level": level,
                 "parent_id": parent_map[parent_sel],
-                "is_atomic": is_atomic,
+                "is_atomic": st.session_state.create_is_atomic,
                 "volume": volume,
                 "reusable": reusable,
                 **(
@@ -457,7 +459,7 @@ elif page == "Components":
                     else {}
                 ),
             }
-            if is_atomic and mat_dict:
+            if st.session_state.create_is_atomic and mat_dict:
                 payload["material_id"] = mat_dict[mat_name]
             res = requests.post(
                 f"{BACKEND_URL}/components",
@@ -482,6 +484,10 @@ elif page == "Components":
             key="update_component_select",
         )
         comp = comp_options[selected]
+        if st.session_state.get("_update_comp_id") != comp["id"]:
+            st.session_state.update_atomic = comp.get("is_atomic", False)
+            st.session_state._update_comp_id = comp["id"]
+        st.checkbox("Atomic", key="update_atomic", on_change=rerun)
         with st.form("update_component"):
             up_name = st.text_input("Name", comp["name"])
             up_level = int(
@@ -513,10 +519,6 @@ elif page == "Components":
                 list(parent_map.keys()),
                 index=parent_idx,
             )
-            up_atomic = st.checkbox(
-                "Atomic",
-                value=comp.get("is_atomic", False),
-            )
             mat_names = list(mat_dict.keys())
             mat_idx = (
                 mat_names.index(
@@ -532,7 +534,7 @@ elif page == "Components":
                 if mat_dict
                 else 0
             )
-            if up_atomic and mat_dict:
+            if st.session_state.update_atomic and mat_dict:
                 up_mat = st.selectbox("Material", mat_names, index=mat_idx)
             else:
                 up_mat = ""
@@ -665,7 +667,7 @@ elif page == "Components":
                     "project_id": st.session_state.get("project_id"),
                     "level": up_level,
                     "parent_id": parent_map[up_parent],
-                    "is_atomic": up_atomic,
+                    "is_atomic": st.session_state.update_atomic,
                     "volume": up_volume,
                     "reusable": up_reusable,
                     **(
@@ -681,7 +683,7 @@ elif page == "Components":
                         else {}
                     ),
                 }
-                if up_atomic and mat_dict:
+                if st.session_state.update_atomic and mat_dict:
                     payload["material_id"] = mat_dict.get(up_mat)
                 res = requests.put(
                     f"{BACKEND_URL}/components/{comp['id']}",
