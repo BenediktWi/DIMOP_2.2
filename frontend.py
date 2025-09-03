@@ -14,6 +14,7 @@ except (FileNotFoundError, KeyError, StreamlitAPIException):
 # auth_token = st.session_state.get("token")
 # AUTH_HEADERS = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
 
+
 def get_materials():
     try:
         r = requests.get(f"{BACKEND_URL}/materials")  # später mit AUTH_HEADERS
@@ -22,6 +23,7 @@ def get_materials():
     except Exception:
         return []
 
+
 def get_components():
     try:
         r = requests.get(f"{BACKEND_URL}/components")  # später mit AUTH_HEADERS
@@ -29,6 +31,7 @@ def get_components():
         return r.json()
     except Exception:
         return []
+
 
 st.title("DIMOP 2.2")
 page = st.sidebar.selectbox("Page", ["Materials", "Components"])
@@ -47,6 +50,7 @@ if page == "Materials":
             )
             if res.ok:
                 st.success("Material created")
+                st.experimental_rerun()
             else:
                 st.error(res.text)
 
@@ -68,6 +72,7 @@ if page == "Materials":
                 )
                 if res.ok:
                     st.success("Material updated")
+                    st.experimental_rerun()
                 else:
                     st.error(res.text)
     else:
@@ -79,7 +84,7 @@ if page == "Materials":
         col1.write(f"{m['name']} ({m['id']}) - {m.get('description', '')}")
         if col2.button("Delete", key=f"del_mat_{m['id']}"):
             requests.delete(
-                f"{BACKEND_URL}/materials/{m['id']}"
+                f"{BACKEND_URL}/materials/{m['id']}",
                 # TODO: pass AUTH_HEADERS once login is implemented
             )
             st.experimental_rerun()
@@ -87,25 +92,36 @@ if page == "Materials":
 elif page == "Components":
     materials = get_materials()
     mat_dict = {m['name']: m['id'] for m in materials}
+    components = get_components()
 
     st.header("Create component")
     with st.form("create_component"):
         name = st.text_input("Name")
         mat_name = st.selectbox("Material", list(mat_dict.keys())) if mat_dict else ""
+        level = st.number_input("Level", min_value=0, step=1, format="%d")
+        parent_candidates = [c for c in components if c['level'] == level - 1] if level > 0 else []
+        parent_map = {f"{c['name']} (id:{c['id']})": c['id'] for c in parent_candidates}
+        parent_label = st.selectbox("Parent", [""] + list(parent_map.keys())) if parent_map else ""
+        parent_id = parent_map.get(parent_label)
         submitted = st.form_submit_button("Create")
         if submitted and name and mat_dict:
             res = requests.post(
                 f"{BACKEND_URL}/components",
-                json={"name": name, "material_id": mat_dict[mat_name]},
+                json={
+                    "name": name,
+                    "material_id": mat_dict[mat_name],
+                    "level": int(level),
+                    "parent_id": parent_id,
+                },
                 # TODO: pass AUTH_HEADERS once login is implemented
             )
             if res.ok:
                 st.success("Component created")
+                st.experimental_rerun()
             else:
                 st.error(res.text)
 
     st.header("Update component")
-    components = get_components()
     if components:
         comp_options = {f"{c['name']} (id:{c['id']})": c for c in components}
         selected = st.selectbox("Select component", list(comp_options.keys()))
@@ -113,19 +129,46 @@ elif page == "Components":
         with st.form("update_component"):
             up_name = st.text_input("Name", comp["name"])
             mat_names = list(mat_dict.keys())
-            mat_idx = mat_names.index(
-                next((n for n, i in mat_dict.items() if i == comp['material_id']), mat_names[0])
-            ) if mat_dict else 0
+            mat_idx = (
+                mat_names.index(
+                    next((n for n, i in mat_dict.items() if i == comp['material_id']), mat_names[0])
+                )
+                if mat_dict
+                else 0
+            )
             up_mat = st.selectbox("Material", mat_names, index=mat_idx) if mat_dict else ""
+            up_level = st.number_input(
+                "Level", min_value=0, step=1, format="%d", value=int(comp["level"])
+            )
+            parent_candidates = [
+                c for c in components if c["level"] == up_level - 1 and c["id"] != comp["id"]
+            ] if up_level > 0 else []
+            parent_map = {f"{c['name']} (id:{c['id']})": c['id'] for c in parent_candidates}
+            parent_default = next(
+                (k for k, v in parent_map.items() if v == comp.get("parent_id")), ""
+            )
+            parent_index = (
+                list(parent_map.keys()).index(parent_default) + 1 if parent_default else 0
+            )
+            up_parent_label = st.selectbox(
+                "Parent", [""] + list(parent_map.keys()), index=parent_index
+            )
+            up_parent = parent_map.get(up_parent_label)
             updated = st.form_submit_button("Update")
             if updated:
                 res = requests.put(
                     f"{BACKEND_URL}/components/{comp['id']}",
-                    json={"name": up_name, "material_id": mat_dict.get(up_mat)},
+                    json={
+                        "name": up_name,
+                        "material_id": mat_dict.get(up_mat),
+                        "level": int(up_level),
+                        "parent_id": up_parent,
+                    },
                     # TODO: pass AUTH_HEADERS once login is implemented
                 )
                 if res.ok:
                     st.success("Component updated")
+                    st.experimental_rerun()
                 else:
                     st.error(res.text)
     else:
@@ -133,12 +176,19 @@ elif page == "Components":
 
     st.header("Existing components")
     for c in components:
-        mat_name = next((m['name'] for m in materials if m['id'] == c['material_id']), 'N/A')
+        mat_name = next(
+            (m['name'] for m in materials if m['id'] == c['material_id']), 'N/A'
+        )
+        parent_name = next(
+            (p['name'] for p in components if p['id'] == c.get('parent_id')), 'None'
+        )
         col1, col2 = st.columns([4, 1])
-        col1.write(f"{c['name']} ({c['id']}) - Material: {mat_name}")
+        col1.write(
+            f"{c['name']} ({c['id']}) - Level: {c['level']} - Parent: {parent_name} - Material: {mat_name}"
+        )
         if col2.button("Delete", key=f"del_comp_{c['id']}"):
             requests.delete(
-                f"{BACKEND_URL}/components/{c['id']}"
+                f"{BACKEND_URL}/components/{c['id']}",
                 # TODO: pass AUTH_HEADERS once login is implemented
             )
             st.experimental_rerun()
