@@ -360,7 +360,7 @@ elif page == "Components":
         **{f"{c['name']} (id:{c['id']})": c["id"] for c in parent_candidates},
     }
     parent_sel = st.selectbox("Parent component", list(parent_map.keys()))
-    reusable = st.checkbox("Resuable", key="create_reusable")
+    reusable = st.checkbox("Reusable", key="create_reusable")
 
     systemability = None
     r_factor = None
@@ -497,6 +497,7 @@ elif page == "Components":
                 rerun()
             else:
                 st.error(res.text)
+
     if st.button("From existing Component"):
         copy_component_dialog()
 
@@ -569,7 +570,7 @@ elif page == "Components":
                 index=parent_idx,
             )
             up_reusable = st.checkbox(
-                "Resuable",
+                "Reusable",
                 value=comp.get("reusable", False),
             )
             up_systemability = comp.get("systemability")
