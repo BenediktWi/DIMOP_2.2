@@ -111,7 +111,6 @@ class Component(Base):
     volume = Column(Float, nullable=True)
     weight = Column(Float, nullable=True)
     reusable = Column(Boolean, default=False)
-    connection_type = Column(Integer, nullable=True)
     systemability = Column(Float, nullable=True)
     r_factor = Column(Float, nullable=True)
     trenn_eff = Column(Float, nullable=True)
@@ -265,7 +264,6 @@ class ComponentBase(BaseModel):
     is_atomic: Optional[bool] = None
     volume: Optional[float] = None
     reusable: Optional[bool] = None
-    connection_type: Optional[int] = None
     systemability: Optional[float] = None
     r_factor: Optional[float] = None
     trenn_eff: Optional[float] = None
@@ -287,7 +285,6 @@ class ComponentUpdate(BaseModel):
     is_atomic: Optional[bool] = None
     volume: Optional[float] = None
     reusable: Optional[bool] = None
-    connection_type: Optional[int] = None
     systemability: Optional[float] = None
     r_factor: Optional[float] = None
     trenn_eff: Optional[float] = None
@@ -348,12 +345,7 @@ def compute_component_score(
         f1 = component.get_weight()
         f2 = sum(child_scores)
         f3 = 0.9 if component.reusable else 1.0
-        try:
-            level = int(component.connection_type)
-        except (TypeError, ValueError):
-            level = 0
-        bounded = min(max(level, 0), 5)
-        f4 = 1.0 - 0.05 * bounded
+        f4 = 1.0
     score = f1 * f2 * f3 * f4
 
     cache[component.id] = score
@@ -437,7 +429,6 @@ def on_startup():
             ("volume", "FLOAT"),
             ("weight", "FLOAT"),
             ("reusable", "BOOLEAN"),
-            ("connection_type", "INTEGER"),
             ("project_id", "INTEGER"),
             ("systemability", "FLOAT"),
             ("r_factor", "FLOAT"),
@@ -768,7 +759,6 @@ def export_csv(
         "volume",
         "weight",
         "reusable",
-        "connection_type",
         "systemability",
         "r_factor",
         "trenn_eff",
@@ -830,7 +820,6 @@ def export_csv(
                 comp.volume if comp.volume is not None else "",
                 comp.weight if comp.weight is not None else "",
                 comp.reusable if comp.reusable is not None else "",
-                comp.connection_type if comp.connection_type is not None else "",
                 comp.systemability if comp.systemability is not None else "",
                 comp.r_factor if comp.r_factor is not None else "",
                 comp.trenn_eff if comp.trenn_eff is not None else "",
@@ -860,7 +849,6 @@ def export_csv(
                 "",
                 "",
                 project_id,
-                "",
                 "",
                 "",
                 "",
@@ -938,11 +926,6 @@ async def import_csv(
                     volume=float(row["volume"]) if row.get("volume") else None,
                     weight=float(row["weight"]) if row.get("weight") else None,
                     reusable=row.get("reusable", "").lower() == "true",
-                    connection_type=(
-                        int(row["connection_type"])
-                        if row.get("connection_type")
-                        else None
-                    ),
                     systemability=(
                         float(row["systemability"])
                         if row.get("systemability")
@@ -1051,7 +1034,7 @@ def _gmv_terms(
     gmv_abzug = 0.0
     contaminated = False
     for i, ci in enumerate(components):
-        for cj in components[i + 1 :]:
+        for cj in components[i + 1:]:
             m1, m2 = ci.material_id, cj.material_id
             if not (m1 and m2):
                 continue

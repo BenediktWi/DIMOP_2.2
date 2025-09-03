@@ -310,7 +310,6 @@ elif page == "Components":
                 "is_atomic",
                 "volume",
                 "reusable",
-                "connection_type",
                 "systemability",
                 "r_factor",
                 "trenn_eff",
@@ -361,7 +360,6 @@ elif page == "Components":
         is_atomic = st.checkbox("Atomic")
         volume = st.number_input("Volume", value=0.0)
         reusable = st.checkbox("Reusable")
-        connection_type = st.number_input("Connection type", value=0, step=1)
 
         systemability = None
         r_factor = None
@@ -450,7 +448,6 @@ elif page == "Components":
                     "is_atomic": is_atomic,
                     "volume": volume,
                     "reusable": reusable,
-                    "connection_type": connection_type,
                     **(
                         {
                             "systemability": systemability,
@@ -547,11 +544,6 @@ elif page == "Components":
                 "Reusable",
                 value=comp.get("reusable", False),
             )
-            up_conn = st.number_input(
-                "Connection type",
-                value=comp.get("connection_type", 0) or 0,
-                step=1,
-            )
             up_systemability = comp.get("systemability")
             up_r_factor = comp.get("r_factor")
             up_trenn_eff = comp.get("trenn_eff")
@@ -626,7 +618,11 @@ elif page == "Components":
                     else 0
                 )
                 up_sort_eff = sort_map[
-                    st.selectbox("Sorting efficiency", list(sort_map.keys()), index=sort_idx)
+                    st.selectbox(
+                        "Sorting efficiency",
+                        list(sort_map.keys()),
+                        index=sort_idx,
+                    )
                 ]
                 mv_bonus_map = {
                     "None": 0.0,
@@ -679,7 +675,6 @@ elif page == "Components":
                         "is_atomic": up_atomic,
                         "volume": up_volume,
                         "reusable": up_reusable,
-                        "connection_type": up_conn,
                         **(
                             {
                                 "systemability": up_systemability,
