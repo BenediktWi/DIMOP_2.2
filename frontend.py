@@ -362,7 +362,7 @@ elif page == "Components":
     parent_sel = st.selectbox("Parent component", list(parent_map.keys()))
     reusable = st.checkbox("Reusable", key="create_reusable")
 
-    #Standardwerte
+    # Standardwerte
     systemability = None
     r_factor = None
     trenn_eff = None
@@ -465,6 +465,7 @@ elif page == "Components":
         if is_atomic and (not mat_dict or not mat_name):
             st.error("Material required for atomic component")
         else:
+            # Variante B: erst Extra-Block bauen, dann mergen
             extra_r8 = (
                 {
                     "systemability": systemability,
@@ -477,7 +478,7 @@ elif page == "Components":
                 if "R8" in r_strats
                 else {}
             )
-    
+
             payload = {
                 "name": name,
                 "project_id": st.session_state.get("project_id"),
@@ -488,19 +489,20 @@ elif page == "Components":
                 "reusable": reusable,
                 **extra_r8,
             }
-        
-        if is_atomic:
-            payload["material_id"] = mat_dict[mat_name]
-        res = requests.post(
-            f"{BACKEND_URL}/components",
-            json=payload,
-            headers=AUTH_HEADERS,
-        )
-        if res.ok:
-            st.success("Component created")
-            rerun()
-        else:
-            st.error(res.text)
+
+            if is_atomic:
+                payload["material_id"] = mat_dict[mat_name]
+
+            res = requests.post(
+                f"{BACKEND_URL}/components",
+                json=payload,
+                headers=AUTH_HEADERS,
+            )
+            if res.ok:
+                st.success("Component created")
+                rerun()
+            else:
+                st.error(res.text)
 
     if st.button("From existing Component"):
         copy_component_dialog()
