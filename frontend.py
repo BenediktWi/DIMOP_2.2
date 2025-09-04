@@ -171,6 +171,25 @@ def render_projects():
         if c2.button("Cancel"):
             st.rerun()
 
+    @st.dialog("Delete Project")
+    def confirm_delete_dialog(project_id, project_name):
+        st.write(
+            "Deleting this project will also delete **all components** in this project. Are you sure you want to proceed?"
+        )
+        st.write(f"Project: **{project_name}**")
+        c1, c2 = st.columns(2)
+        if c1.button("Delete"):
+            resp = requests.delete(
+                f"{BACKEND_URL}/projects/{project_id}", headers=AUTH_HEADERS
+            )
+            if resp.status_code == 204:
+                st.success("Project deleted")
+                st.rerun()
+            else:
+                st.error(resp.text)
+        if c2.button("Cancel"):
+            st.rerun()
+
     # Grid: 3 columns, fill left-to-right
     N_COLS = 3
     cols = st.columns(N_COLS)
@@ -199,7 +218,10 @@ def render_projects():
                     st.session_state["r_strategies"] = proj.get("r_strategies") or []
                     navigate("Components")  # jump to Components when selecting a Project
                 st.write("")
-                st.button("Delete", key=f"proj_delete_{proj['id']}", use_container_width=True)
+                if st.button(
+                    "Delete", key=f"proj_delete_{proj['id']}", use_container_width=True
+                ):
+                    confirm_delete_dialog(proj["id"], proj["name"])
 
     # Centered Create Project tile
     create_cols = st.columns(N_COLS)
