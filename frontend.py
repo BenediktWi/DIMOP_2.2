@@ -362,6 +362,7 @@ elif page == "Components":
     parent_sel = st.selectbox("Parent component", list(parent_map.keys()))
     reusable = st.checkbox("Reusable", key="create_reusable")
 
+    #Standardwerte
     systemability = None
     r_factor = None
     trenn_eff = None
@@ -464,27 +465,30 @@ elif page == "Components":
         if is_atomic and (not mat_dict or not mat_name):
             st.error("Material required for atomic component")
         else:
-            payload = {
-                "name": name,
-                "project_id": st.session_state.get("project_id"),
-                "level": level,
-                "parent_id": parent_map[parent_sel],
-                "is_atomic": is_atomic,
-                "volume": volume,
-                "reusable": reusable,
-                **(
-                    {
-                        "systemability": systemability,
-                        "r_factor": r_factor,
-                        "trenn_eff": trenn_eff,
-                        "sort_eff": sort_eff,
-                        "mv_bonus": mv_bonus,
-                        "mv_abzug": mv_abzug,
-                    }
-                    if "R8" in r_strats
-                    else {},
-                ),
+        extra_r8 = (
+            {
+                "systemability": systemability,
+                "r_factor": r_factor,
+                "trenn_eff": trenn_eff,
+                "sort_eff": sort_eff,
+                "mv_bonus": mv_bonus,
+                "mv_abzug": mv_abzug,
             }
+            if "R8" in r_strats
+            else {}
+        )
+
+        payload = {
+            "name": name,
+            "project_id": st.session_state.get("project_id"),
+            "level": level,
+            "parent_id": parent_map[parent_sel],
+            "is_atomic": is_atomic,
+            "volume": volume,
+            "reusable": reusable,
+            **extra_r8,
+        }
+        
             if is_atomic:
                 payload["material_id"] = mat_dict[mat_name]
             res = requests.post(
