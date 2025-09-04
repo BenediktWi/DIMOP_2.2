@@ -33,7 +33,7 @@ except (FileNotFoundError, KeyError, StreamlitAPIException):
     BACKEND_URL = os.getenv("BACKEND_URL", DEFAULT_BACKEND_URL)
 
 
-AUTH_HEADERS = {}
+AUTH_HEADERS = {"Authorization": f"Bearer {st.session_state['token']}"} if "token" in st.session_state else {}
 
 
 def get_materials():
@@ -96,30 +96,7 @@ def build_graphviz_tree(items):
     return dot
 
 
-auth_token = st.session_state.get("token")
-
-if not auth_token:
-    with st.sidebar.form("login"):
-        st.write("Login")
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        submitted = st.form_submit_button("Login")
-        if submitted:
-            try:
-                res = requests.post(
-                    f"{BACKEND_URL}/token",
-                    data={"username": username, "password": password},
-                )
-                res.raise_for_status()
-                st.session_state.token = res.json().get("access_token")
-                rerun()
-            except Exception:
-                st.error("Login failed")
-else:
-    st.sidebar.write("Logged in")
-    AUTH_HEADERS = {
-        "Authorization": f"Bearer {st.session_state['token']}"
-    }
+if "token" in st.session_state:
     projects = get_projects()
     if projects:
         proj_options = {f"{p['name']} (id:{p['id']})": p['id'] for p in projects}
@@ -137,6 +114,32 @@ else:
         )
     else:
         st.sidebar.write("No projects available")
+
+    LABELS = {
+        "R0": "Refuse",
+        "R1": "Rethink",
+        "R2": "Reduce",
+        "R3": "Reuse",
+        "R4": "Repair",
+        "R5": "Refurbish",
+        "R6": "Remanufacture",
+        "R7": "Repurpose",
+        "R8": "Recycle",
+        "R9": "Recover",
+    }
+    codes = st.session_state.get("r_strategies") or []
+    labels = [LABELS.get(c, c) for c in codes]
+    if labels:
+        st.sidebar.markdown(
+            " ".join(
+                [
+                    f"<span style='padding:2px 6px;border:1px solid #ccc;border-radius:8px;font-size:12px;margin-right:4px'>{lbl}</span>"
+                    for lbl in labels
+                ]
+            ),
+            unsafe_allow_html=True,
+        )
+
     with st.sidebar.form("create_project"):
         new_proj = st.text_input("New project name")
         r_opts = {
@@ -169,9 +172,6 @@ else:
                 rerun()
             else:
                 st.error(res.text)
-    if st.sidebar.button("Logout"):
-        del st.session_state["token"]
-        rerun()
 
 
 st.title("DIMOP 2.2")
@@ -184,6 +184,13 @@ default_idx = (
 page = st.sidebar.selectbox(
     "Page", page_options, index=default_idx, key="page_select"
 )
+
+st.sidebar.divider()
+if "token" in st.session_state:
+    if st.sidebar.button("Logout"):
+        st.session_state.pop("token", None)
+        st.session_state["page_select"] = "Dashboard"
+        st.rerun()
 
 if page == "Materials":
     st.header("Create material")
