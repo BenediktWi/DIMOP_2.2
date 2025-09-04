@@ -5,6 +5,12 @@ from graphviz import Digraph
 import requests
 
 
+def require_auth():
+    if "token" not in st.session_state:
+        st.session_state["page_select"] = "Home"
+        st.rerun()
+
+
 def do_rerun():
     """Compatibility helper for Streamlit rerun."""
     if hasattr(st, "experimental_rerun"):
@@ -169,9 +175,14 @@ else:
 
 
 st.title("DIMOP 2.2")
+page_options = ["Home", "Materials", "Components", "Export/Import"]
+default_idx = (
+    page_options.index(st.session_state.get("page_select", "Home"))
+    if st.session_state.get("page_select", "Home") in page_options
+    else 0
+)
 page = st.sidebar.selectbox(
-    "Page",
-    ["Materials", "Components", "Export/Import"],
+    "Page", page_options, index=default_idx, key="page_select"
 )
 
 if page == "Materials":
