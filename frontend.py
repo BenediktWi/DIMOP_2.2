@@ -240,13 +240,13 @@ pending_nav = st.session_state.pop("_nav_to", None)
 
 if pending_nav and pending_nav in page_options:
     # Programmatic navigation this run: set default index via widget (no direct session write)
-    page = st.sidebar.selectbox("Page", page_options, index=page_options.index(pending_nav), key="page_select")
+    st.sidebar.selectbox("Page", page_options, index=page_options.index(pending_nav), key="page_select")
 elif "page_select" in st.session_state:
     # Let existing widget value stand; don't pass index explicitly to avoid warning
-    page = st.sidebar.selectbox("Page", page_options, key="page_select")
+    st.sidebar.selectbox("Page", page_options, key="page_select")
 else:
     # First run: default to Projects
-    page = st.sidebar.selectbox("Page", page_options, index=page_options.index("Projects"), key="page_select")
+    st.sidebar.selectbox("Page", page_options, index=page_options.index("Projects"), key="page_select")
 
 # ---------- Sidebar: Project dropdown + R tags + Logout ----------
 if "token" in st.session_state:
@@ -289,12 +289,10 @@ if "token" in st.session_state:
         st.session_state.pop("token", None)
         navigate("Projects")
 
-# ---------- Router ----------
-if page == "Projects":
-    render_projects()
+# ---------- Page renderers ----------
 
-elif page == "Materials":
-    # require_auth()
+def render_materials():
+    require_auth()
     st.header("Create material")
     with st.form("create_material"):
         name = st.text_input("Name")
@@ -405,8 +403,8 @@ elif page == "Materials":
             )
             rerun()
 
-elif page == "Components":
-    # require_auth()
+def render_components():
+    require_auth()
     materials = get_materials()
     mat_dict = {m['name']: m['id'] for m in materials}
     components = get_components()
@@ -952,8 +950,8 @@ elif page == "Components":
                 f"Biogenic: {ev['biogenic_gwp']:.2f}, ADPf: {ev['adpf']:.2f}"
             )
 
-elif page == "Export/Import":
-    # require_auth()
+def render_export_import():
+    require_auth()
     st.header("Export database")
     if st.button("Download CSV"):
         try:
@@ -988,3 +986,15 @@ elif page == "Export/Import":
             st.success("Import successful")
         except Exception as e:
             st.error(str(e))
+
+
+# ---------- Router ----------
+page = st.session_state.get("page_select", "Projects")
+if page == "Projects":
+    render_projects()
+elif page == "Materials":
+    render_materials()
+elif page == "Components":
+    render_components()
+elif page == "Export/Import":
+    render_export_import()
