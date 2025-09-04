@@ -189,7 +189,7 @@ st.sidebar.divider()
 if "token" in st.session_state:
     if st.sidebar.button("Logout"):
         st.session_state.pop("token", None)
-        st.session_state["page_select"] = "Dashboard"
+        st.session_state["page_select"] = "Home"
         st.rerun()
 
 if page == "Materials":
