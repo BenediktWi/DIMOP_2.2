@@ -128,8 +128,8 @@ def render_projects():
 
     projs_sorted = sorted(projects, key=sort_key)
 
-    # Tiles list incl. Create tile at the end
-    tiles = projs_sorted + [{"__create__": True}]
+    # Tiles list
+    tiles = projs_sorted
 
     # Create Project dialog
     @st.dialog("Create Project")
@@ -171,34 +171,14 @@ def render_projects():
         if c2.button("Cancel"):
             st.rerun()
 
-    # Grid: 3 columns, fill right-to-left
+    # Grid: 3 columns, fill left-to-right
     N_COLS = 3
     cols = st.columns(N_COLS)
 
     for i, proj in enumerate(tiles):
-        col = cols[(N_COLS - 1) - (i % N_COLS)]  # right-to-left in each row
+        col = cols[i % N_COLS]
         with col:
-            if proj.get("__create__"):
-                with st.container(border=True):
-                    # fixed-height title area (match project cards)
-                    st.markdown(
-                        """
-                        <div style="
-                            height:64px;
-                            display:flex;
-                            align-items:center;
-                            justify-content:center;
-                            font-weight:600;
-                            font-size:1.1rem;">➕ Create Project
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-                    if st.button("New project", key=f"proj_create_btn_{i}", use_container_width=True):
-                        create_project_dialog()
-                continue
-
-            # Tile: fixed-height name area + button -> consistent tile heights
+            # Tile: fixed-height name area + buttons -> consistent tile heights
             with st.container(border=True):
                 st.markdown(
                     f"""
@@ -218,6 +198,40 @@ def render_projects():
                     st.session_state["project_id"] = proj["id"]
                     st.session_state["r_strategies"] = proj.get("r_strategies") or []
                     navigate("Components")  # jump to Components when selecting a Project
+                st.write("")
+                st.button("Delete", key=f"proj_delete_{proj['id']}", use_container_width=True)
+
+    # Centered Create Project tile
+    create_cols = st.columns(N_COLS)
+    with create_cols[1]:
+        with st.container(border=True):
+            if st.button(
+                "➕ Create Project",
+                use_container_width=True,
+                key="create_project_main",
+            ):
+                create_project_dialog()
+
+    from streamlit.components.v1 import html
+    html(
+        """
+        <script>
+        const doc = window.parent.document;
+        Array.from(doc.getElementsByTagName('button')).forEach(btn => {
+            const txt = btn.innerText.trim();
+            if (txt === 'Select') btn.classList.add('btn-select');
+            else if (txt === 'Delete') btn.classList.add('btn-delete');
+            else if (txt === '➕ Create Project') btn.classList.add('btn-create');
+        });
+        </script>
+        <style>
+        .btn-select:hover { background-color: #00B050 !important; }
+        .btn-delete:hover { background-color: #FF0000 !important; }
+        .btn-create:hover { filter: brightness(1.05); }
+        </style>
+        """,
+        height=0,
+    )
 
 # ---------- Misc ----------
 def build_graphviz_tree(items):
