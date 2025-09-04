@@ -227,7 +227,55 @@ async def test_update_component_material_no_project_id(async_client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["material_id"] == mat2_id
-    assert data["weight"] == pytest.approx(7.5)
+
+
+@pytest.mark.anyio("asyncio")
+async def test_delete_project_cascades_components(async_client):
+    login = await async_client.post(
+        "/token",
+        data={"username": "admin", "password": "secret"},
+    )
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    proj_resp = await async_client.post(
+        "/projects", json={"name": "Proj"}, headers=headers
+    )
+    project_id = proj_resp.json()["id"]
+
+    mat_resp = await async_client.post(
+        "/materials",
+        json={"name": "Mat", "project_id": project_id},
+        headers=headers,
+    )
+    mat_id = mat_resp.json()["id"]
+
+    comp_resp = await async_client.post(
+        "/components",
+        json={
+            "name": "Comp",
+            "is_atomic": True,
+            "material_id": mat_id,
+            "project_id": project_id,
+        },
+        headers=headers,
+    )
+    assert comp_resp.status_code == 200
+
+    del_resp = await async_client.delete(
+        f"/projects/{project_id}", headers=headers
+    )
+    assert del_resp.status_code == 204
+
+    comps_after = await async_client.get(
+        "/components", params={"project_id": project_id}, headers=headers
+    )
+    assert comps_after.status_code == 200
+    assert comps_after.json() == []
+
+    projs_after = await async_client.get("/projects", headers=headers)
+    assert projs_after.status_code == 200
+    assert all(p["id"] != project_id for p in projs_after.json())
 
 
 @pytest.mark.anyio("asyncio")

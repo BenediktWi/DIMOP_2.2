@@ -60,7 +60,11 @@ class Project(Base):
     name = Column(String, unique=True, nullable=False)
     r_strategies = Column(String, nullable=True)
     materials = relationship("Material", back_populates="project")
-    components = relationship("Component", back_populates="project")
+    components = relationship(
+        "Component",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
 
 
 class Material(Base):
@@ -514,6 +518,28 @@ def read_projects(
     current_user: dict = Depends(get_current_user),
 ):
     return db.query(Project).all()
+
+
+@app.delete("/projects/{project_id}", status_code=204)
+def delete_project(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    for material in project.materials:
+        material.project_id = None
+    try:
+        db.delete(project)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409, detail="Project could not be deleted due to constraints"
+        )
+    return Response(status_code=204)
 
 
 # Material routes
