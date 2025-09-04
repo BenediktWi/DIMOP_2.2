@@ -427,7 +427,6 @@ def render_components():
                 "level",
                 "parent_id",
                 "is_atomic",
-                "volume",
                 "reusable",
                 "systemability",
                 "r_factor",
@@ -436,6 +435,8 @@ def render_components():
                 "mv_bonus",
                 "mv_abzug",
             ]
+            if orig.get("is_atomic"):
+                fields.append("volume")
             payload = {k: orig.get(k) for k in fields}
             payload.update(
                 {
@@ -472,7 +473,11 @@ def render_components():
         if is_atomic and mat_dict
         else ""
     )
-    volume = st.number_input("Volume", value=0.0)
+    volume = (
+        st.number_input("Volume", value=0.0, key="create_volume")
+        if is_atomic
+        else None
+    )
     parent_candidates = [c for c in components if c.get("level") == level - 1]
     parent_map = {
         "None": None,
@@ -604,13 +609,12 @@ def render_components():
                 "level": level,
                 "parent_id": parent_map[parent_sel],
                 "is_atomic": is_atomic,
-                "volume": volume,
                 "reusable": reusable,
                 **extra_r8,
             }
-
             if is_atomic:
                 payload["material_id"] = mat_dict[mat_name]
+                payload["volume"] = volume
 
             res = requests.post(
                 f"{BACKEND_URL}/components",
@@ -668,9 +672,13 @@ def render_components():
                 if up_atomic and mat_dict
                 else ""
             )
-            up_volume = st.number_input(
-                "Volume",
-                value=comp.get("volume", 0.0) or 0.0,
+            up_volume = (
+                st.number_input(
+                    "Volume",
+                    value=comp.get("volume", 0.0) or 0.0,
+                )
+                if up_atomic
+                else None
             )
             parent_candidates = [
                 c
@@ -817,31 +825,34 @@ def render_components():
                     )
                 ]
             updated = st.form_submit_button("Update")
+
             if updated:
+                payload = {
+                    "name": up_name,
+                    "project_id": st.session_state.get("project_id"),
+                    "material_id": mat_dict.get(up_mat),
+                    "level": up_level,
+                    "parent_id": parent_map[up_parent],
+                    "is_atomic": up_atomic,
+                    "reusable": up_reusable,
+                    **(
+                        {
+                            "systemability": up_systemability,
+                            "r_factor": up_r_factor,
+                            "trenn_eff": up_trenn_eff,
+                            "sort_eff": up_sort_eff,
+                            "mv_bonus": up_mv_bonus,
+                            "mv_abzug": up_mv_abzug,
+                        }
+                        if "R8" in r_strats
+                        else {},
+                    ),
+                }
+                if up_atomic:
+                    payload["volume"] = up_volume
                 res = requests.put(
                     f"{BACKEND_URL}/components/{comp['id']}",
-                    json={
-                        "name": up_name,
-                        "project_id": st.session_state.get("project_id"),
-                        "material_id": mat_dict.get(up_mat),
-                        "level": up_level,
-                        "parent_id": parent_map[up_parent],
-                        "is_atomic": up_atomic,
-                        "volume": up_volume,
-                        "reusable": up_reusable,
-                        **(
-                            {
-                                "systemability": up_systemability,
-                                "r_factor": up_r_factor,
-                                "trenn_eff": up_trenn_eff,
-                                "sort_eff": up_sort_eff,
-                                "mv_bonus": up_mv_bonus,
-                                "mv_abzug": up_mv_abzug,
-                            }
-                            if "R8" in r_strats
-                            else {}
-                        ),
-                    },
+                    json=payload,
                     headers=AUTH_HEADERS,
                 )
                 if res.ok:

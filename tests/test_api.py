@@ -217,7 +217,7 @@ async def test_update_component_material_no_project_id(async_client):
         headers=headers,
     )
     comp_id = comp.json()["id"]
-    assert comp.json()["weight"] is None
+    assert comp.json()["weight"] == 0.0
 
     resp = await async_client.put(
         f"/components/{comp_id}",
@@ -363,4 +363,158 @@ async def test_delete_material_cascades_components(async_client_full_schema):
     )
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+@pytest.mark.anyio("asyncio")
+async def test_recursive_weight_calculation(async_client):
+    login = await async_client.post(
+        "/token",
+        data={"username": "admin", "password": "secret"},
+    )
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    proj = await async_client.post(
+        "/projects", json={"name": "Proj"}, headers=headers
+    )
+    project_id = proj.json()["id"]
+
+    m1 = await async_client.post(
+        "/materials",
+        json={"name": "M1", "density": 1.5, "project_id": project_id},
+        headers=headers,
+    )
+    m2 = await async_client.post(
+        "/materials",
+        json={"name": "M2", "density": 2.0, "project_id": project_id},
+        headers=headers,
+    )
+    m3 = await async_client.post(
+        "/materials",
+        json={"name": "M3", "density": 10.0, "project_id": project_id},
+        headers=headers,
+    )
+    m4 = await async_client.post(
+        "/materials",
+        json={"name": "M4", "density": 2.0, "project_id": project_id},
+        headers=headers,
+    )
+    m5 = await async_client.post(
+        "/materials",
+        json={"name": "M5", "density": 3.0, "project_id": project_id},
+        headers=headers,
+    )
+
+    A = await async_client.post(
+        "/components",
+        json={"name": "A", "project_id": project_id, "is_atomic": False},
+        headers=headers,
+    )
+    A_id = A.json()["id"]
+    B = await async_client.post(
+        "/components",
+        json={
+            "name": "B",
+            "project_id": project_id,
+            "is_atomic": True,
+            "volume": 2,
+            "material_id": m1.json()["id"],
+            "parent_id": A_id,
+        },
+        headers=headers,
+    )
+    C = await async_client.post(
+        "/components",
+        json={
+            "name": "C",
+            "project_id": project_id,
+            "is_atomic": True,
+            "volume": 3,
+            "material_id": m2.json()["id"],
+            "parent_id": A_id,
+        },
+        headers=headers,
+    )
+    assert B.json()["weight"] == pytest.approx(3.0)
+    assert C.json()["weight"] == pytest.approx(6.0)
+    A_read = await async_client.get(
+        f"/components/{A_id}",
+        params={"project_id": project_id},
+        headers=headers,
+    )
+    assert A_read.json()["weight"] == pytest.approx(9.0)
+
+    D = await async_client.post(
+        "/components",
+        json={"name": "D", "project_id": project_id, "is_atomic": False},
+        headers=headers,
+    )
+    D_id = D.json()["id"]
+    E = await async_client.post(
+        "/components",
+        json={
+            "name": "E",
+            "project_id": project_id,
+            "is_atomic": False,
+            "parent_id": D_id,
+        },
+        headers=headers,
+    )
+    E_id = E.json()["id"]
+    F = await async_client.post(
+        "/components",
+        json={
+            "name": "F",
+            "project_id": project_id,
+            "is_atomic": True,
+            "volume": 1,
+            "material_id": m3.json()["id"],
+            "parent_id": D_id,
+        },
+        headers=headers,
+    )
+    G = await async_client.post(
+        "/components",
+        json={
+            "name": "G",
+            "project_id": project_id,
+            "is_atomic": True,
+            "volume": 2,
+            "material_id": m4.json()["id"],
+            "parent_id": E_id,
+        },
+        headers=headers,
+    )
+    H = await async_client.post(
+        "/components",
+        json={
+            "name": "H",
+            "project_id": project_id,
+            "is_atomic": True,
+            "volume": 1,
+            "material_id": m5.json()["id"],
+            "parent_id": E_id,
+        },
+        headers=headers,
+    )
+    assert G.json()["weight"] == pytest.approx(4.0)
+    assert H.json()["weight"] == pytest.approx(3.0)
+    E_read = await async_client.get(
+        f"/components/{E_id}",
+        params={"project_id": project_id},
+        headers=headers,
+    )
+    F_read = await async_client.get(
+        f"/components/{F.json()['id']}",
+        params={"project_id": project_id},
+        headers=headers,
+    )
+    D_read = await async_client.get(
+        f"/components/{D_id}",
+        params={"project_id": project_id},
+        headers=headers,
+    )
+    assert E_read.json()["weight"] == pytest.approx(7.0)
+    assert F_read.json()["weight"] == pytest.approx(10.0)
+    assert D_read.json()["weight"] == pytest.approx(17.0)
 
