@@ -465,42 +465,42 @@ elif page == "Components":
         if is_atomic and (not mat_dict or not mat_name):
             st.error("Material required for atomic component")
         else:
-        extra_r8 = (
-            {
-                "systemability": systemability,
-                "r_factor": r_factor,
-                "trenn_eff": trenn_eff,
-                "sort_eff": sort_eff,
-                "mv_bonus": mv_bonus,
-                "mv_abzug": mv_abzug,
-            }
-            if "R8" in r_strats
-            else {}
-        )
-
-        payload = {
-            "name": name,
-            "project_id": st.session_state.get("project_id"),
-            "level": level,
-            "parent_id": parent_map[parent_sel],
-            "is_atomic": is_atomic,
-            "volume": volume,
-            "reusable": reusable,
-            **extra_r8,
-        }
-        
-            if is_atomic:
-                payload["material_id"] = mat_dict[mat_name]
-            res = requests.post(
-                f"{BACKEND_URL}/components",
-                json=payload,
-                headers=AUTH_HEADERS,
+            extra_r8 = (
+                {
+                    "systemability": systemability,
+                    "r_factor": r_factor,
+                    "trenn_eff": trenn_eff,
+                    "sort_eff": sort_eff,
+                    "mv_bonus": mv_bonus,
+                    "mv_abzug": mv_abzug,
+                }
+                if "R8" in r_strats
+                else {}
             )
-            if res.ok:
-                st.success("Component created")
-                rerun()
-            else:
-                st.error(res.text)
+    
+            payload = {
+                "name": name,
+                "project_id": st.session_state.get("project_id"),
+                "level": level,
+                "parent_id": parent_map[parent_sel],
+                "is_atomic": is_atomic,
+                "volume": volume,
+                "reusable": reusable,
+                **extra_r8,
+            }
+        
+        if is_atomic:
+            payload["material_id"] = mat_dict[mat_name]
+        res = requests.post(
+            f"{BACKEND_URL}/components",
+            json=payload,
+            headers=AUTH_HEADERS,
+        )
+        if res.ok:
+            st.success("Component created")
+            rerun()
+        else:
+            st.error(res.text)
 
     if st.button("From existing Component"):
         copy_component_dialog()
