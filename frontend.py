@@ -796,11 +796,13 @@ elif page == "Components":
             rerun()
 
     st.header("Component hierarchy")
-    with st.expander("Component hierarchy (Graph)"):
+    view_mode = st.selectbox("Component hierarchy view", ["Tree", "Graph"], index=0)
+    if view_mode == "Graph":
         src = build_graphviz_source(components)
         st.graphviz_chart(src, use_container_width=True)
-    tree = build_tree(components)
-    display_tree(tree)
+    else:
+        tree = build_tree(components)
+        display_tree(tree)
 
     if st.button("Fertigstellen"):
         sustainability_dialog()
