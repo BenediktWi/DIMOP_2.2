@@ -553,7 +553,7 @@ def render_components():
             "MV 1.00 → 10.0": 10.0,
         }[
             st.selectbox(
-                "Materialverträglichkeit-Bonus",
+                "Material compatibility bonus",
                 [
                     "None",
                     "MV 0.25 → 2.5",
@@ -565,16 +565,16 @@ def render_components():
             )
         ]
         mv_abzug = {
-            "kein Abzug": 0.0,
-            "unverträglich": -2.0,
-            "kontaminierend (MV-2 oder MV-3)": -3.0,
+            "no deduction": 0.0,
+            "incompatible": -2.0,
+            "contaminating (MV-2 or MV-3)": -3.0,
         }[
             st.selectbox(
-                "Störstoffe/Kontamination – Abzug",
+                "Contaminants / deduction",
                 [
-                    "kein Abzug",
-                    "unverträglich",
-                    "kontaminierend (MV-2 oder MV-3)",
+                    "no deduction",
+                    "incompatible",
+                    "contaminating (MV-2 or MV-3)",
                 ],
                 key="create_mv_abzug",
             )
@@ -793,15 +793,15 @@ def render_components():
                 )
                 up_mv_bonus = mv_bonus_map[
                     st.selectbox(
-                        "Materialverträglichkeit-Bonus",
+                        "Material compatibility bonus",
                         list(mv_bonus_map.keys()),
                         index=mv_bonus_idx,
                     )
                 ]
                 mv_abzug_map = {
-                    "kein Abzug": 0.0,
-                    "unverträglich": -2.0,
-                    "kontaminierend (MV-2 oder MV-3)": -3.0,
+                    "no deduction": 0.0,
+                    "incompatible": -2.0,
+                    "contaminating (MV-2 or MV-3)": -3.0,
                 }
                 mv_abzug_vals = list(mv_abzug_map.values())
                 mv_abzug_idx = (
@@ -811,7 +811,7 @@ def render_components():
                 )
                 up_mv_abzug = mv_abzug_map[
                     st.selectbox(
-                        "Störstoffe/Kontamination – Abzug",
+                        "Contaminants / deduction",
                         list(mv_abzug_map.keys()),
                         index=mv_abzug_idx,
                     )
@@ -894,11 +894,11 @@ def render_components():
             if node['children']:
                 display_tree(node['children'], level + 1)
 
-    @st.dialog("Nachhaltigkeitsbewertung berechnen")
+    @st.dialog("Calculate sustainability assessment")
     def sustainability_dialog():
-        st.write("Nachhaltigkeitsbewertung berechnen?")
+        st.write("Calculate sustainability assessment?")
         col1, col2 = st.columns(2)
-        if col1.button("Ja, berechnen"):
+        if col1.button("Yes, calculate"):
             try:
                 res = requests.post(
                     f"{BACKEND_URL}/sustainability/calculate",
@@ -910,7 +910,7 @@ def render_components():
                 st.session_state.sustainability = []
                 st.error(str(e))
             rerun()
-        if col2.button("Abbrechen"):
+        if col2.button("Cancel"):
             rerun()
 
     st.header("Component hierarchy")
@@ -918,7 +918,7 @@ def render_components():
     tree = build_tree(components)
     display_tree(tree)
 
-    if st.button("Fertigstellen"):
+    if st.button("Finish"):
         sustainability_dialog()
 
     if st.session_state.get("sustainability"):
