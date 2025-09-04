@@ -4,13 +4,17 @@ from streamlit.errors import StreamlitAPIException
 from graphviz import Digraph
 import requests
 
+# Navigation helpers 
+def navigate(to_page: str):
+    """Programmatic navigation without touching widget-bound keys directly."""
+    st.session_state["_nav_to"] = to_page
+    st.rerun()
 
 def require_auth():
     if "token" not in st.session_state:
-        st.session_state["page_select"] = "Dashboard"
-        st.rerun()
+        navigate("Home")
 
-
+# Rerun helpers
 def do_rerun():
     """Compatibility helper for Streamlit rerun."""
     if hasattr(st, "experimental_rerun"):
@@ -18,24 +22,21 @@ def do_rerun():
     elif hasattr(st, "rerun"):
         st.rerun()
 
-
 def rerun():
     """Backward compatible wrapper."""
     do_rerun()
-# Fallback-Logik für BACKEND_URL: zuerst st.secrets, dann ENV, sonst Default
 
-
-# Fallback-Logik für BACKEND_URL: zuerst st.secrets, dann ENV, sonst Default
+# Backend URL 
 DEFAULT_BACKEND_URL = "http://localhost:8000"
 try:
     BACKEND_URL = st.secrets["BACKEND_URL"]
 except (FileNotFoundError, KeyError, StreamlitAPIException):
     BACKEND_URL = os.getenv("BACKEND_URL", DEFAULT_BACKEND_URL)
 
-
+# Auth headers (rebuilt on each run)
 AUTH_HEADERS = {"Authorization": f"Bearer {st.session_state['token']}"} if "token" in st.session_state else {}
 
-
+# Labels for R strategies
 LABELS = {
     "R0": "Refuse",
     "R1": "Rethink",
@@ -49,7 +50,7 @@ LABELS = {
     "R9": "Recover",
 }
 
-
+# API helpers
 def get_materials():
     project_id = st.session_state.get("project_id")
     if not project_id:
@@ -66,7 +67,6 @@ def get_materials():
     except Exception as e:
         st.error(str(e))
     return []
-
 
 def get_components():
     project_id = st.session_state.get("project_id")
@@ -85,7 +85,6 @@ def get_components():
         st.error(str(e))
     return []
 
-
 def get_projects():
     try:
         r = requests.get(
@@ -97,9 +96,9 @@ def get_projects():
     except Exception:
         return []
 
-
-def render_dashboard():
-    st.title("Project Dashboard")
+# Home (Landing) ----------
+def render_home():
+    st.title("Your Projects")
 
     # Unauthenticated: show login form in main
     if "token" not in st.session_state:
@@ -112,8 +111,7 @@ def render_dashboard():
                     res = requests.post(f"{BACKEND_URL}/token", data={"username": u, "password": p})
                     res.raise_for_status()
                     st.session_state["token"] = res.json().get("access_token")
-                    st.session_state["page_select"] = "Dashboard"
-                    st.rerun()
+                    navigate("Home")
                 except Exception:
                     st.error("Login failed")
         return
@@ -124,7 +122,7 @@ def render_dashboard():
     except Exception:
         projects = []
 
-    # Sort: older first; fallback by id
+    # Sort older first; fallback by id
     def sort_key(p):
         return (p.get("created_at") or ""), p.get("id", 0)
 
@@ -191,12 +189,11 @@ def render_dashboard():
             with st.container(border=True):
                 st.markdown(f"### {proj['name']}")
                 if st.button("Select", key=f"proj_select_{proj['id']}"):
-                    st.session_state["project_id"] = proj["id"]          # <-- use ID
+                    st.session_state["project_id"] = proj["id"]          # use ID
                     st.session_state["r_strategies"] = proj.get("r_strategies") or []
-                    st.session_state["page_select"] = "Components"       # <-- jump to Components
-                    st.rerun()
+                    navigate("Components")                               # jump to Components when selecting a Project
 
-
+# Misc
 def build_graphviz_tree(items):
     dot = Digraph()
     for comp in items:
@@ -208,20 +205,47 @@ def build_graphviz_tree(items):
             dot.edge(str(parent), str(comp['id']))
     return dot
 
-
+# Title 
 st.title("DIMOP 2.2")
-page_options = ["Dashboard", "Materials", "Components", "Export/Import"]
+
+# Apply pending programmatic navigation BEFORE creating the selectbox
+if "_nav_to" in st.session_state:
+    st.session_state["page_select"] = st.session_state.pop("_nav_to")
+
+# Sidebar: Page select
+page_options = ["Home", "Materials", "Components", "Export/Import"]
 default_idx = (
-    page_options.index(st.session_state.get("page_select", "Dashboard"))
-    if st.session_state.get("page_select", "Dashboard") in page_options
+    page_options.index(st.session_state.get("page_select", "Home"))
+    if st.session_state.get("page_select", "Home") in page_options
     else 0
 )
 page = st.sidebar.selectbox(
     "Page", page_options, index=default_idx, key="page_select"
 )
 
-st.sidebar.divider()
+# Sidebar: Project dropdown + R-Tags + Logout-Button
 if "token" in st.session_state:
+   
+    # Project dropdown
+    projects = get_projects()
+    if projects:
+        proj_options = {f"{p['name']} (id:{p['id']})": p['id'] for p in projects}
+        proj_map = {p['id']: p for p in projects}
+        if "project_id" not in st.session_state and proj_options:
+            st.session_state.project_id = next(iter(proj_options.values()))
+        selected = st.sidebar.selectbox(
+            "Project",
+            list(proj_options.keys()),
+            index=list(proj_options.values()).index(st.session_state.project_id) if proj_options else 0,
+        )
+        st.session_state.project_id = proj_options[selected]
+        st.session_state.r_strategies = (
+            proj_map[st.session_state.project_id].get("r_strategies") or []
+        )
+    else:
+        st.sidebar.write("No projects available")
+
+    # R strategy tags under the dropdown
     codes = st.session_state.get("r_strategies") or []
     labels = [LABELS.get(c, c) for c in codes]
     if labels:
@@ -236,14 +260,18 @@ if "token" in st.session_state:
             unsafe_allow_html=True,
         )
 
+    st.sidebar.divider()
     if st.sidebar.button("Logout"):
         st.session_state.pop("token", None)
-        st.session_state["page_select"] = "Dashboard"
-        st.rerun()
+        navigate("Home")
 
-if page == "Dashboard":
-    render_dashboard()
+# Router
+if page == "Home":
+    render_home()
+
 elif page == "Materials":
+    # (no auth guard needed if you want open preview; otherwise:)
+    # require_auth()
     st.header("Create material")
     with st.form("create_material"):
         name = st.text_input("Name")
@@ -355,6 +383,7 @@ elif page == "Materials":
             rerun()
 
 elif page == "Components":
+    # require_auth()
     materials = get_materials()
     mat_dict = {m['name']: m['id'] for m in materials}
     components = get_components()
@@ -534,7 +563,7 @@ elif page == "Components":
         if is_atomic and (not mat_dict or not mat_name):
             st.error("Material required for atomic component")
         else:
-            # Variante B: erst Extra-Block bauen, dann mergen
+            # erst Extra-Block bauen, dann mergen - so weniger Fehleranfällig
             extra_r8 = (
                 {
                     "systemability": systemability,
@@ -901,6 +930,7 @@ elif page == "Components":
             )
 
 elif page == "Export/Import":
+    # require_auth()
     st.header("Export database")
     if st.button("Download CSV"):
         try:
