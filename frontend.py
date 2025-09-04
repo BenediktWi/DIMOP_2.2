@@ -33,10 +33,14 @@ def get_components():
         return []
 
 
-st.title("DIMOP 2.2")
-page = st.sidebar.selectbox("Page", ["Materials", "Components"])
+def require_auth():
+    if not st.session_state.get("token"):
+        st.error("Please log in to access this page.")
+        st.stop()
 
-if page == "Materials":
+
+def render_materials():
+    require_auth()
     st.header("Create material")
     with st.form("create_material"):
         name = st.text_input("Name")
@@ -89,7 +93,9 @@ if page == "Materials":
             )
             st.experimental_rerun()
 
-elif page == "Components":
+
+def render_components():
+    require_auth()
     materials = get_materials()
     mat_dict = {m['name']: m['id'] for m in materials}
     components = get_components()
@@ -192,3 +198,27 @@ elif page == "Components":
                 # TODO: pass AUTH_HEADERS once login is implemented
             )
             st.experimental_rerun()
+
+
+def render_export_import():
+    require_auth()
+    st.header("Export/Import")
+    st.info("Export/Import functionality not implemented yet.")
+
+
+def render_projects():
+    require_auth()
+    st.header("Projects")
+    st.info("Projects page not implemented yet.")
+
+
+st.title("DIMOP 2.2")
+page = st.session_state.get("page_select", "Projects")
+if page == "Projects":
+    render_projects()
+elif page == "Materials":
+    render_materials()
+elif page == "Components":
+    render_components()
+elif page == "Export/Import":
+    render_export_import()
