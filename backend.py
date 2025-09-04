@@ -198,6 +198,34 @@ class Compability(Base):
     name = Column(String, nullable=False)
 
 
+def recalc_component_weight(db: Session, component: Component) -> float:
+    """Recalculate component weight recursively."""
+    if component.is_atomic:
+        density = (
+            component.material.density
+            if component.material and component.material.density
+            else 0.0
+        )
+        volume = component.volume or 0.0
+        component.weight = volume * density
+        db.add(component)
+        return component.weight
+
+    total = 0.0
+    for child in component.children:
+        total += recalc_component_weight(db, child)
+    component.weight = total
+    db.add(component)
+    return total
+
+
+def recalc_ancestors(db: Session, component: Optional[Component]):
+    """Recalculate weights for ``component`` and its ancestors."""
+    while component is not None:
+        recalc_component_weight(db, component)
+        component = component.parent
+
+
 # Pydantic schemas
 class MaterialBase(BaseModel):
     name: str
@@ -603,9 +631,10 @@ def create_component(
     if not component.is_atomic:
         data["material_id"] = None
     db_component = Component(**data)
-    if material and db_component.volume is not None and material.density is not None:
-        db_component.weight = db_component.volume * material.density
     db.add(db_component)
+    db.commit()
+    db.refresh(db_component)
+    recalc_ancestors(db, db_component)
     db.commit()
     db.refresh(db_component)
     return db_component
@@ -668,11 +697,10 @@ def update_component(
         )
     if not component.is_atomic:
         component.material_id = None
-    material = db.get(Material, component.material_id)
-    if component.volume is not None and material and material.density is not None:
-        component.weight = component.volume * material.density
-    else:
-        component.weight = None
+        component.volume = None
+    db.commit()
+    db.refresh(component)
+    recalc_ancestors(db, component)
     db.commit()
     db.refresh(component)
     return component
@@ -688,8 +716,13 @@ def delete_component(
     component = db.get(Component, component_id)
     if not component or component.project_id != project_id:
         raise HTTPException(status_code=404, detail="Component not found")
+    parent = component.parent
     db.delete(component)
     db.commit()
+    if parent is not None:
+        db.refresh(parent)
+        recalc_ancestors(db, parent)
+        db.commit()
     return {"ok": True}
 
 
