@@ -7,7 +7,7 @@ import requests
 
 def require_auth():
     if "token" not in st.session_state:
-        st.session_state["page_select"] = "Home"
+        st.session_state["page_select"] = "Dashboard"
         st.rerun()
 
 
@@ -34,6 +34,20 @@ except (FileNotFoundError, KeyError, StreamlitAPIException):
 
 
 AUTH_HEADERS = {"Authorization": f"Bearer {st.session_state['token']}"} if "token" in st.session_state else {}
+
+
+LABELS = {
+    "R0": "Refuse",
+    "R1": "Rethink",
+    "R2": "Reduce",
+    "R3": "Reuse",
+    "R4": "Repair",
+    "R5": "Refurbish",
+    "R6": "Remanufacture",
+    "R7": "Repurpose",
+    "R8": "Recycle",
+    "R9": "Recover",
+}
 
 
 def get_materials():
@@ -84,64 +98,45 @@ def get_projects():
         return []
 
 
-def build_graphviz_tree(items):
-    dot = Digraph()
-    for comp in items:
-        label = f"{comp['name']}\nLevel {comp.get('level', '')}"
-        dot.node(str(comp['id']), label)
-    for comp in items:
-        parent = comp.get('parent_id')
-        if parent:
-            dot.edge(str(parent), str(comp['id']))
-    return dot
+def render_dashboard():
+    st.title("Project Dashboard")
 
+    # Unauthenticated: show login form in main
+    if "token" not in st.session_state:
+        with st.form("login_main"):
+            st.subheader("Sign in")
+            u = st.text_input("Username")
+            p = st.text_input("Password", type="password")
+            if st.form_submit_button("Login"):
+                try:
+                    res = requests.post(f"{BACKEND_URL}/token", data={"username": u, "password": p})
+                    res.raise_for_status()
+                    st.session_state["token"] = res.json().get("access_token")
+                    st.session_state["page_select"] = "Dashboard"
+                    st.rerun()
+                except Exception:
+                    st.error("Login failed")
+        return
 
-if "token" in st.session_state:
-    projects = get_projects()
-    if projects:
-        proj_options = {f"{p['name']} (id:{p['id']})": p['id'] for p in projects}
-        proj_map = {p['id']: p for p in projects}
-        if "project_id" not in st.session_state:
-            st.session_state.project_id = next(iter(proj_options.values()))
-        selected = st.sidebar.selectbox(
-            "Project",
-            list(proj_options.keys()),
-            index=list(proj_options.values()).index(st.session_state.project_id),
-        )
-        st.session_state.project_id = proj_options[selected]
-        st.session_state.r_strategies = (
-            proj_map[st.session_state.project_id].get("r_strategies") or []
-        )
-    else:
-        st.sidebar.write("No projects available")
+    # Authenticated: load projects
+    try:
+        projects = get_projects() or []
+    except Exception:
+        projects = []
 
-    LABELS = {
-        "R0": "Refuse",
-        "R1": "Rethink",
-        "R2": "Reduce",
-        "R3": "Reuse",
-        "R4": "Repair",
-        "R5": "Refurbish",
-        "R6": "Remanufacture",
-        "R7": "Repurpose",
-        "R8": "Recycle",
-        "R9": "Recover",
-    }
-    codes = st.session_state.get("r_strategies") or []
-    labels = [LABELS.get(c, c) for c in codes]
-    if labels:
-        st.sidebar.markdown(
-            " ".join(
-                [
-                    f"<span style='padding:2px 6px;border:1px solid #ccc;border-radius:8px;font-size:12px;margin-right:4px'>{lbl}</span>"
-                    for lbl in labels
-                ]
-            ),
-            unsafe_allow_html=True,
-        )
+    # Sort: older first; fallback by id
+    def sort_key(p):
+        return (p.get("created_at") or ""), p.get("id", 0)
 
-    with st.sidebar.form("create_project"):
-        new_proj = st.text_input("New project name")
+    projs_sorted = sorted(projects, key=sort_key)
+
+    # Tiles list incl. Create tile at the end
+    tiles = projs_sorted + [{"__create__": True}]
+
+    # Create Project dialog
+    @st.dialog("Create Project")
+    def create_project_dialog():
+        new_name = st.text_input("Project name")
         r_opts = {
             "Refuse (R0)": "R0",
             "Rethink (R1)": "R1",
@@ -157,28 +152,68 @@ if "token" in st.session_state:
         selected_strats = [
             code
             for label, code in r_opts.items()
-            if st.checkbox(label, key=f"proj_{code}")
+            if st.checkbox(label, key=f"dlg_{code}")
         ]
-        created = st.form_submit_button("Add Project")
-        if created and new_proj:
-            res = requests.post(
-                f"{BACKEND_URL}/projects",
-                json={"name": new_proj, "r_strategies": selected_strats},
-                headers=AUTH_HEADERS,
-            )
-            if res.ok:
-                st.success("Project created")
-                st.session_state.project_id = res.json()["id"]
-                rerun()
+        c1, c2 = st.columns(2)
+        if c1.button("Create"):
+            if not new_name:
+                st.error("Please enter a name")
             else:
-                st.error(res.text)
+                try:
+                    res = requests.post(
+                        f"{BACKEND_URL}/projects",
+                        json={"name": new_name, "r_strategies": selected_strats},
+                        headers=AUTH_HEADERS,
+                    )
+                    res.raise_for_status()
+                    st.success("Project created")
+                    st.rerun()
+                except Exception as e:
+                    st.error(str(e))
+        if c2.button("Cancel"):
+            st.rerun()
+
+    # Grid: 3 columns, fill right-to-left
+    N_COLS = 3
+    cols = st.columns(N_COLS)
+
+    for i, proj in enumerate(tiles):
+        col = cols[(N_COLS - 1) - (i % N_COLS)]  # right-to-left in each row
+        with col:
+            if proj.get("__create__"):
+                with st.container(border=True):
+                    st.markdown("### ➕ Create Project")
+                    if st.button("New project", key=f"proj_create_btn_{i}"):
+                        create_project_dialog()
+                continue
+
+            # Tile shows only the project NAME; internally use the ID
+            with st.container(border=True):
+                st.markdown(f"### {proj['name']}")
+                if st.button("Select", key=f"proj_select_{proj['id']}"):
+                    st.session_state["project_id"] = proj["id"]          # <-- use ID
+                    st.session_state["r_strategies"] = proj.get("r_strategies") or []
+                    st.session_state["page_select"] = "Components"       # <-- jump to Components
+                    st.rerun()
+
+
+def build_graphviz_tree(items):
+    dot = Digraph()
+    for comp in items:
+        label = f"{comp['name']}\nLevel {comp.get('level', '')}"
+        dot.node(str(comp['id']), label)
+    for comp in items:
+        parent = comp.get('parent_id')
+        if parent:
+            dot.edge(str(parent), str(comp['id']))
+    return dot
 
 
 st.title("DIMOP 2.2")
-page_options = ["Home", "Materials", "Components", "Export/Import"]
+page_options = ["Dashboard", "Materials", "Components", "Export/Import"]
 default_idx = (
-    page_options.index(st.session_state.get("page_select", "Home"))
-    if st.session_state.get("page_select", "Home") in page_options
+    page_options.index(st.session_state.get("page_select", "Dashboard"))
+    if st.session_state.get("page_select", "Dashboard") in page_options
     else 0
 )
 page = st.sidebar.selectbox(
@@ -187,12 +222,28 @@ page = st.sidebar.selectbox(
 
 st.sidebar.divider()
 if "token" in st.session_state:
+    codes = st.session_state.get("r_strategies") or []
+    labels = [LABELS.get(c, c) for c in codes]
+    if labels:
+        st.sidebar.markdown(
+            " ".join(
+                [
+                    f"<span style='padding:2px 6px;border:1px solid #ccc;border-radius:8px;"
+                    f"font-size:12px;margin-right:4px'>{lbl}</span>"
+                    for lbl in labels
+                ]
+            ),
+            unsafe_allow_html=True,
+        )
+
     if st.sidebar.button("Logout"):
         st.session_state.pop("token", None)
-        st.session_state["page_select"] = "Home"
+        st.session_state["page_select"] = "Dashboard"
         st.rerun()
 
-if page == "Materials":
+if page == "Dashboard":
+    render_dashboard()
+elif page == "Materials":
     st.header("Create material")
     with st.form("create_material"):
         name = st.text_input("Name")
