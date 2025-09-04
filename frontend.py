@@ -78,8 +78,9 @@ def get_projects():
         return []
 
 
-def build_graphviz_tree(items):
-    dot = Digraph()
+@st.cache_data(ttl=30, show_spinner=False)
+def build_graphviz_source(items):
+    dot = Digraph(engine="dot")
     for comp in items:
         label = f"{comp['name']}\nLevel {comp.get('level', '')}"
         dot.node(str(comp['id']), label)
@@ -87,7 +88,7 @@ def build_graphviz_tree(items):
         parent = comp.get('parent_id')
         if parent:
             dot.edge(str(parent), str(comp['id']))
-    return dot
+    return dot.source
 
 
 auth_token = st.session_state.get("token")
@@ -795,7 +796,9 @@ elif page == "Components":
             rerun()
 
     st.header("Component hierarchy")
-    st.graphviz_chart(build_graphviz_tree(components))
+    with st.expander("Component hierarchy (Graph)"):
+        src = build_graphviz_source(components)
+        st.graphviz_chart(src, use_container_width=True)
     tree = build_tree(components)
     display_tree(tree)
 
