@@ -251,6 +251,11 @@ class ProjectCreate(ProjectBase):
     pass
 
 
+class ProjectUpdate(BaseModel):
+    name: Optional[str] = None
+    r_strategies: Optional[List[str]] = None
+
+
 class ProjectRead(ProjectBase):
     id: int
 
@@ -519,6 +524,112 @@ def read_projects(
 ):
     return db.query(Project).all()
 
+
+@app.put("/projects/{project_id}", response_model=ProjectRead)
+def update_project(
+    project_id: int,
+    project: ProjectUpdate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    db_project = db.get(Project, project_id)
+    if not db_project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if project.name is not None:
+        db_project.name = project.name
+    if project.r_strategies is not None:
+        db_project.r_strategies = ",".join(project.r_strategies)
+    db.commit()
+    db.refresh(db_project)
+    return db_project
+
+
+@app.post("/projects/{project_id}/copy", response_model=ProjectRead)
+def copy_project(
+    project_id: int,
+    project: ProjectCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    source = db.get(Project, project_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Project not found")
+    new_proj = Project(
+        name=project.name,
+        r_strategies=",".join(project.r_strategies or []),
+    )
+    db.add(new_proj)
+    db.commit()
+    db.refresh(new_proj)
+
+    material_map = {}
+    for mat in source.materials:
+        new_name = mat.name
+        suffix = 1
+        while db.query(Material).filter(Material.name == new_name).first():
+            suffix += 1
+            new_name = f"{mat.name} ({suffix})"
+        new_mat = Material(
+            name=new_name,
+            description=mat.description,
+            total_gwp=mat.total_gwp,
+            fossil_gwp=mat.fossil_gwp,
+            biogenic_gwp=mat.biogenic_gwp,
+            adpf=mat.adpf,
+            density=mat.density,
+            is_dangerous=mat.is_dangerous,
+            project_id=new_proj.id,
+        )
+        db.add(new_mat)
+        db.flush()
+        material_map[mat.id] = new_mat.id
+
+    component_map = {}
+    for comp in source.components:
+        new_comp = Component(
+            name=comp.name,
+            level=comp.level,
+            parent_id=None,
+            is_atomic=comp.is_atomic,
+            volume=comp.volume,
+            weight=comp.weight,
+            reusable=comp.reusable,
+            systemability=comp.systemability,
+            r_factor=comp.r_factor,
+            trenn_eff=comp.trenn_eff,
+            sort_eff=comp.sort_eff,
+            mv_bonus=comp.mv_bonus,
+            mv_abzug=comp.mv_abzug,
+            project_id=new_proj.id,
+            material_id=material_map.get(comp.material_id),
+        )
+        db.add(new_comp)
+        db.flush()
+        component_map[comp.id] = new_comp.id
+
+    for comp in source.components:
+        if comp.parent_id:
+            new_id = component_map[comp.id]
+            parent_new_id = component_map.get(comp.parent_id)
+            if parent_new_id:
+                db.query(Component).filter(Component.id == new_id).update(
+                    {Component.parent_id: parent_new_id}
+                )
+
+    for mc in db.query(MaterialCompatibility).all():
+        if mc.material_id_1 in material_map and mc.material_id_2 in material_map:
+            db.add(
+                MaterialCompatibility(
+                    material_id_1=material_map[mc.material_id_1],
+                    material_id_2=material_map[mc.material_id_2],
+                    mv_bonus=mc.mv_bonus,
+                    mv_abzug=mc.mv_abzug,
+                )
+            )
+
+    db.commit()
+    db.refresh(new_proj)
+    return new_proj
 
 @app.delete("/projects/{project_id}", status_code=204)
 def delete_project(

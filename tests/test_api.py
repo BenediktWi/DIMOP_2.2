@@ -566,3 +566,88 @@ async def test_recursive_weight_calculation(async_client):
     assert F_read.json()["weight"] == pytest.approx(10.0)
     assert D_read.json()["weight"] == pytest.approx(17.0)
 
+
+@pytest.mark.anyio("asyncio")
+async def test_update_project(async_client):
+    login = await async_client.post(
+        "/token",
+        data={"username": "admin", "password": "secret"},
+    )
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    proj_resp = await async_client.post(
+        "/projects",
+        json={"name": "Orig", "r_strategies": ["R1"]},
+        headers=headers,
+    )
+    pid = proj_resp.json()["id"]
+
+    upd = await async_client.put(
+        f"/projects/{pid}",
+        json={"name": "Changed", "r_strategies": ["R2", "R3"]},
+        headers=headers,
+    )
+    assert upd.status_code == 200
+    data = upd.json()
+    assert data["name"] == "Changed"
+    assert set(data["r_strategies"]) == {"R2", "R3"}
+
+
+@pytest.mark.anyio("asyncio")
+async def test_copy_project(async_client):
+    login = await async_client.post(
+        "/token",
+        data={"username": "admin", "password": "secret"},
+    )
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    proj_resp = await async_client.post(
+        "/projects",
+        json={"name": "Source", "r_strategies": ["R1"]},
+        headers=headers,
+    )
+    src_id = proj_resp.json()["id"]
+
+    mat_resp = await async_client.post(
+        "/materials",
+        json={"name": "Steel", "description": "d", "project_id": src_id},
+        headers=headers,
+    )
+    mat_id = mat_resp.json()["id"]
+
+    await async_client.post(
+        "/components",
+        json={
+            "name": "Comp",
+            "material_id": mat_id,
+            "project_id": src_id,
+            "is_atomic": True,
+        },
+        headers=headers,
+    )
+
+    copy_resp = await async_client.post(
+        f"/projects/{src_id}/copy",
+        json={"name": "Clone", "r_strategies": ["R2"]},
+        headers=headers,
+    )
+    assert copy_resp.status_code == 200
+    new_id = copy_resp.json()["id"]
+    assert new_id != src_id
+    mats_new = await async_client.get(
+        "/materials", params={"project_id": new_id}, headers=headers
+    )
+    comps_new = await async_client.get(
+        "/components", params={"project_id": new_id}, headers=headers
+    )
+    assert mats_new.status_code == 200
+    assert comps_new.status_code == 200
+    assert len(mats_new.json()) == 1
+    assert len(comps_new.json()) == 1
+    mat_new = mats_new.json()[0]
+    comp_new = comps_new.json()[0]
+    assert mat_new["description"] == "d"
+    assert comp_new["material_id"] == mat_new["id"]
+
