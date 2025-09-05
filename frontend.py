@@ -284,6 +284,8 @@ else:
     # First run: default to Projects
     st.sidebar.selectbox("Page", page_options, index=page_options.index("Projects"), key="page_select")
 
+st.sidebar.divider()
+
 # ---------- Sidebar: Project dropdown + R tags + Logout ----------
 if "token" in st.session_state:
     # Project dropdown (kept as requested)
