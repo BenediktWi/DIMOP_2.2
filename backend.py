@@ -23,7 +23,7 @@ from sqlalchemy.orm import (
     sessionmaker,
     Session,
 )
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -45,7 +45,7 @@ sqlite3.dbapi2.connect = _sqlite_connect
 
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False, "foreign_keys": 1},
+    connect_args={"check_same_thread": False, "foreign_keys": 1, "timeout": 30},
 )
 SessionLocal = sessionmaker(
     bind=engine, autoflush=False, autocommit=False
@@ -512,7 +512,11 @@ def create_project(
         r_strategies=",".join(project.r_strategies or []),
     )
     db.add(db_project)
-    db.commit()
+    try:
+        db.commit()
+    except OperationalError:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Database is busy")
     db.refresh(db_project)
     return db_project
 
@@ -539,7 +543,11 @@ def update_project(
         db_project.name = project.name
     if project.r_strategies is not None:
         db_project.r_strategies = ",".join(project.r_strategies)
-    db.commit()
+    try:
+        db.commit()
+    except OperationalError:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Database is busy")
     db.refresh(db_project)
     return db_project
 
@@ -559,7 +567,11 @@ def copy_project(
         r_strategies=",".join(project.r_strategies or []),
     )
     db.add(new_proj)
-    db.commit()
+    try:
+        db.commit()
+    except OperationalError:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Database is busy")
     db.refresh(new_proj)
 
     material_map = {}
@@ -627,7 +639,11 @@ def copy_project(
                 )
             )
 
-    db.commit()
+    try:
+        db.commit()
+    except OperationalError:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Database is busy")
     db.refresh(new_proj)
     return new_proj
 
