@@ -4,7 +4,17 @@ from streamlit.errors import StreamlitAPIException
 from graphviz import Digraph
 import requests
 
+# ---------- Navigation helpers ----------
+def navigate(to_page: str):
+    """Programmatic navigation without touching widget-bound keys directly."""
+    st.session_state["_nav_to"] = to_page
+    st.rerun()
 
+def require_auth():
+    if "token" not in st.session_state:
+        navigate("Projects")
+
+# ---------- Rerun helpers ----------
 def do_rerun():
     """Compatibility helper for Streamlit rerun."""
     if hasattr(st, "experimental_rerun"):
@@ -12,24 +22,35 @@ def do_rerun():
     elif hasattr(st, "rerun"):
         st.rerun()
 
-
 def rerun():
     """Backward compatible wrapper."""
     do_rerun()
-# Fallback-Logik für BACKEND_URL: zuerst st.secrets, dann ENV, sonst Default
 
-
-# Fallback-Logik für BACKEND_URL: zuerst st.secrets, dann ENV, sonst Default
+# ---------- Backend URL ----------
 DEFAULT_BACKEND_URL = "http://localhost:8000"
 try:
     BACKEND_URL = st.secrets["BACKEND_URL"]
 except (FileNotFoundError, KeyError, StreamlitAPIException):
     BACKEND_URL = os.getenv("BACKEND_URL", DEFAULT_BACKEND_URL)
 
+# ---------- Auth headers (rebuilt on each run) ----------
+AUTH_HEADERS = {"Authorization": f"Bearer {st.session_state['token']}"} if "token" in st.session_state else {}
 
-AUTH_HEADERS = {}
+# ---------- Labels for R strategies ----------
+LABELS = {
+    "R0": "Refuse",
+    "R1": "Rethink",
+    "R2": "Reduce",
+    "R3": "Reuse",
+    "R4": "Repair",
+    "R5": "Refurbish",
+    "R6": "Remanufacture",
+    "R7": "Repurpose",
+    "R8": "Recycle",
+    "R9": "Recover",
+}
 
-
+# ---------- API helpers ----------
 def get_materials():
     project_id = st.session_state.get("project_id")
     if not project_id:
@@ -46,7 +67,6 @@ def get_materials():
     except Exception as e:
         st.error(str(e))
     return []
-
 
 def get_components():
     project_id = st.session_state.get("project_id")
@@ -65,7 +85,6 @@ def get_components():
         st.error(str(e))
     return []
 
-
 def get_projects():
     try:
         r = requests.get(
@@ -77,62 +96,45 @@ def get_projects():
     except Exception:
         return []
 
+# ---------- Projects (Landing) ----------
+def render_projects():
+    st.title("Your Projects")
 
-def build_graphviz_tree(items):
-    dot = Digraph()
-    for comp in items:
-        label = f"{comp['name']}\nLevel {comp.get('level', '')}"
-        dot.node(str(comp['id']), label)
-    for comp in items:
-        parent = comp.get('parent_id')
-        if parent:
-            dot.edge(str(parent), str(comp['id']))
-    return dot
+    # Unauthenticated: show login form in main
+    if "token" not in st.session_state:
+        with st.form("login_main"):
+            st.subheader("Sign in")
+            u = st.text_input("Username")
+            p = st.text_input("Password", type="password")
+            if st.form_submit_button("Login"):
+                try:
+                    res = requests.post(f"{BACKEND_URL}/token", data={"username": u, "password": p})
+                    res.raise_for_status()
+                    st.session_state["token"] = res.json().get("access_token")
+                    navigate("Projects")
+                except Exception:
+                    st.error("Login failed")
+        return
 
+    # Authenticated: load projects
+    try:
+        projects = get_projects() or []
+    except Exception:
+        projects = []
 
-auth_token = st.session_state.get("token")
+    # Sort older first; fallback by id
+    def sort_key(p):
+        return (p.get("created_at") or ""), p.get("id", 0)
 
-if not auth_token:
-    with st.sidebar.form("login"):
-        st.write("Login")
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        submitted = st.form_submit_button("Login")
-        if submitted:
-            try:
-                res = requests.post(
-                    f"{BACKEND_URL}/token",
-                    data={"username": username, "password": password},
-                )
-                res.raise_for_status()
-                st.session_state.token = res.json().get("access_token")
-                rerun()
-            except Exception:
-                st.error("Login failed")
-else:
-    st.sidebar.write("Logged in")
-    AUTH_HEADERS = {
-        "Authorization": f"Bearer {st.session_state['token']}"
-    }
-    projects = get_projects()
-    if projects:
-        proj_options = {f"{p['name']} (id:{p['id']})": p['id'] for p in projects}
-        proj_map = {p['id']: p for p in projects}
-        if "project_id" not in st.session_state:
-            st.session_state.project_id = next(iter(proj_options.values()))
-        selected = st.sidebar.selectbox(
-            "Project",
-            list(proj_options.keys()),
-            index=list(proj_options.values()).index(st.session_state.project_id),
-        )
-        st.session_state.project_id = proj_options[selected]
-        st.session_state.r_strategies = (
-            proj_map[st.session_state.project_id].get("r_strategies") or []
-        )
-    else:
-        st.sidebar.write("No projects available")
-    with st.sidebar.form("create_project"):
-        new_proj = st.text_input("New project name")
+    projs_sorted = sorted(projects, key=sort_key)
+
+    # Tiles list
+    tiles = projs_sorted
+
+    # Create Project dialog
+    @st.dialog("Create Project")
+    def create_project_dialog():
+        new_name = st.text_input("Project name")
         r_opts = {
             "Refuse (R0)": "R0",
             "Rethink (R1)": "R1",
@@ -148,33 +150,205 @@ else:
         selected_strats = [
             code
             for label, code in r_opts.items()
-            if st.checkbox(label, key=f"proj_{code}")
+            if st.checkbox(label, key=f"dlg_{code}")
         ]
-        created = st.form_submit_button("Add Project")
-        if created and new_proj:
-            res = requests.post(
-                f"{BACKEND_URL}/projects",
-                json={"name": new_proj, "r_strategies": selected_strats},
-                headers=AUTH_HEADERS,
-            )
-            if res.ok:
-                st.success("Project created")
-                st.session_state.project_id = res.json()["id"]
-                rerun()
+        c1, c2 = st.columns(2)
+        if c1.button("Create"):
+            if not new_name:
+                st.error("Please enter a name")
             else:
-                st.error(res.text)
-    if st.sidebar.button("Logout"):
-        del st.session_state["token"]
-        rerun()
+                try:
+                    res = requests.post(
+                        f"{BACKEND_URL}/projects",
+                        json={"name": new_name, "r_strategies": selected_strats},
+                        headers=AUTH_HEADERS,
+                    )
+                    res.raise_for_status()
+                    st.success("Project created")
+                    st.rerun()
+                except Exception as e:
+                    st.error(str(e))
+        if c2.button("Cancel"):
+            st.rerun()
 
+    @st.dialog("Delete Project")
+    def confirm_delete_dialog(project_id, project_name):
+        st.write(
+            "Deleting this project will also delete **all components** in this project. Are you sure you want to proceed?"
+        )
+        st.write(f"Project: **{project_name}**")
+        c1, c2 = st.columns(2)
+        if c1.button("Delete"):
+            resp = requests.delete(
+                f"{BACKEND_URL}/projects/{project_id}", headers=AUTH_HEADERS
+            )
+            if resp.status_code == 204:
+                st.success("Project deleted")
+                st.rerun()
+            else:
+                st.error(resp.text)
+        if c2.button("Cancel"):
+            st.rerun()
 
+    # Grid: 3 columns, fill left-to-right
+    N_COLS = 3
+    cols = st.columns(N_COLS)
+
+    for i, proj in enumerate(tiles):
+        col = cols[i % N_COLS]
+        with col:
+            # Tile: fixed-height name area + buttons -> consistent tile heights
+            with st.container(border=True):
+                st.markdown(
+                    f"""
+                    <div style="
+                        height:64px;
+                        overflow:hidden;
+                        display:-webkit-box;
+                        -webkit-line-clamp:2;
+                        -webkit-box-orient:vertical;
+                        font-weight:600;
+                        font-size:1.1rem;
+                        line-height:1.2;
+                        margin-bottom:2px;">{proj['name']}</div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                codes = proj.get("r_strategies") or []
+                labels = [LABELS.get(c, c) for c in codes]
+                tags_html = " ".join(
+                    f"<span style='padding:2px 6px;border:1px solid #ccc;"
+                    f"border-radius:8px;font-size:12px;margin-right:4px'>{lbl}</span>"
+                    for lbl in labels
+                )
+                st.markdown(
+
+                    f"<div style='height:72px;margin:2px 0 6px 0;overflow:hidden'>{tags_html}</div>",
+                    unsafe_allow_html=True,
+                )
+                if st.button("Select", key=f"proj_select_{proj['id']}", use_container_width=True):
+                    st.session_state["project_id"] = proj["id"]
+                    st.session_state["r_strategies"] = proj.get("r_strategies") or []
+                    navigate("Components")  # jump to Components when selecting a Project
+                st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+                if st.button(
+                    "Delete", key=f"proj_delete_{proj['id']}", use_container_width=True
+                ):
+                    confirm_delete_dialog(proj["id"], proj["name"])
+
+    # Centered Create Project tile
+    create_cols = st.columns(N_COLS)
+    with create_cols[1]:
+        with st.container(border=True):
+            if st.button(
+                "➕ Create Project",
+                use_container_width=True,
+                key="create_project_main",
+            ):
+                create_project_dialog()
+
+    from streamlit.components.v1 import html
+    html(
+        """
+        <script>
+        const doc = window.parent.document;
+        Array.from(doc.getElementsByTagName('button')).forEach(btn => {
+            const txt = btn.innerText.trim();
+            if (txt === 'Select') btn.classList.add('btn-select');
+            else if (txt === 'Delete') btn.classList.add('btn-delete');
+            else if (txt === '➕ Create Project') btn.classList.add('btn-create');
+        });
+        </script>
+        <style>
+        .btn-select:hover,
+        .btn-select:active,
+        .btn-select:focus { background-color: #00B050 !important; }
+        .btn-delete:hover,
+        .btn-delete:active,
+        .btn-delete:focus { background-color: #FF0000 !important; }
+        .btn-create:hover { filter: brightness(1.05); }
+        </style>
+        """,
+        height=0,
+    )
+
+# ---------- Misc ----------
+def build_graphviz_tree(items):
+    dot = Digraph()
+    for comp in items:
+        label = f"{comp['name']}\nLevel {comp.get('level', '')}"
+        dot.node(str(comp['id']), label)
+    for comp in items:
+        parent = comp.get('parent_id')
+        if parent:
+            dot.edge(str(parent), str(comp['id']))
+    return dot
+
+# ---------- Title ----------
 st.title("DIMOP 2.2")
+
+# ---------- Sidebar: Page select (no warning, no direct state writes) ----------
+page_options = ["Projects", "Materials", "Components", "Export/Import"]
+pending = st.session_state.pop("_nav_to", None)
+current = st.session_state.get("page_select", "Projects")
+if pending and pending in page_options:
+    current = pending
+    st.session_state["page_select"] = current
+
 page = st.sidebar.selectbox(
     "Page",
-    ["Materials", "Components", "Export/Import"],
+    page_options,
+    index=page_options.index(current),
+    key="page_select",
 )
 
-if page == "Materials":
+st.sidebar.divider()
+
+# ---------- Sidebar: Project dropdown + R tags + Logout ----------
+if "token" in st.session_state:
+    # Project dropdown (kept as requested)
+    projects = get_projects()
+    if projects:
+        proj_options = {f"{p['name']} (id:{p['id']})": p['id'] for p in projects}
+        proj_map = {p['id']: p for p in projects}
+        if "project_id" not in st.session_state and proj_options:
+            st.session_state.project_id = next(iter(proj_options.values()))
+        selected = st.sidebar.selectbox(
+            "Project",
+            list(proj_options.keys()),
+            index=list(proj_options.values()).index(st.session_state.project_id) if proj_options else 0,
+        )
+        st.session_state.project_id = proj_options[selected]
+        st.session_state.r_strategies = (
+            proj_map[st.session_state.project_id].get("r_strategies") or []
+        )
+    else:
+        st.sidebar.write("No projects available")
+
+    # R strategy tags under the dropdown
+    codes = st.session_state.get("r_strategies") or []
+    labels = [LABELS.get(c, c) for c in codes]
+    if labels:
+        st.sidebar.markdown(
+            " ".join(
+                [
+                    f"<span style='padding:2px 6px;border:1px solid #ccc;border-radius:8px;"
+                    f"font-size:12px;margin-right:4px'>{lbl}</span>"
+                    for lbl in labels
+                ]
+            ),
+            unsafe_allow_html=True,
+        )
+
+    st.sidebar.divider()
+    if st.sidebar.button("Logout"):
+        st.session_state.pop("token", None)
+        navigate("Projects")
+
+# ---------- Page renderers ----------
+
+def render_materials():
+    require_auth()
     st.header("Create material")
     with st.form("create_material"):
         name = st.text_input("Name")
@@ -285,7 +459,8 @@ if page == "Materials":
             )
             rerun()
 
-elif page == "Components":
+def render_components():
+    require_auth()
     materials = get_materials()
     mat_dict = {m['name']: m['id'] for m in materials}
     components = get_components()
@@ -308,7 +483,6 @@ elif page == "Components":
                 "level",
                 "parent_id",
                 "is_atomic",
-                "volume",
                 "reusable",
                 "systemability",
                 "r_factor",
@@ -317,6 +491,8 @@ elif page == "Components":
                 "mv_bonus",
                 "mv_abzug",
             ]
+            if orig.get("is_atomic"):
+                fields.append("volume")
             payload = {k: orig.get(k) for k in fields}
             payload.update(
                 {
@@ -353,7 +529,11 @@ elif page == "Components":
         if is_atomic and mat_dict
         else ""
     )
-    volume = st.number_input("Volume", value=0.0)
+    volume = (
+        st.number_input("Volume", value=0.0, key="create_volume")
+        if is_atomic
+        else None
+    )
     parent_candidates = [c for c in components if c.get("level") == level - 1]
     parent_map = {
         "None": None,
@@ -434,7 +614,7 @@ elif page == "Components":
             "MV 1.00 → 10.0": 10.0,
         }[
             st.selectbox(
-                "Materialverträglichkeit-Bonus",
+                "Material compatibility bonus",
                 [
                     "None",
                     "MV 0.25 → 2.5",
@@ -446,16 +626,16 @@ elif page == "Components":
             )
         ]
         mv_abzug = {
-            "kein Abzug": 0.0,
-            "unverträglich": -2.0,
-            "kontaminierend (MV-2 oder MV-3)": -3.0,
+            "no deduction": 0.0,
+            "incompatible": -2.0,
+            "contaminating (MV-2 or MV-3)": -3.0,
         }[
             st.selectbox(
-                "Störstoffe/Kontamination – Abzug",
+                "Contaminants / deduction",
                 [
-                    "kein Abzug",
-                    "unverträglich",
-                    "kontaminierend (MV-2 oder MV-3)",
+                    "no deduction",
+                    "incompatible",
+                    "contaminating (MV-2 or MV-3)",
                 ],
                 key="create_mv_abzug",
             )
@@ -465,7 +645,7 @@ elif page == "Components":
         if is_atomic and (not mat_dict or not mat_name):
             st.error("Material required for atomic component")
         else:
-            # Variante B: erst Extra-Block bauen, dann mergen
+            # erst Extra-Block bauen, dann mergen - so weniger fehleranfällig
             extra_r8 = (
                 {
                     "systemability": systemability,
@@ -485,13 +665,12 @@ elif page == "Components":
                 "level": level,
                 "parent_id": parent_map[parent_sel],
                 "is_atomic": is_atomic,
-                "volume": volume,
                 "reusable": reusable,
                 **extra_r8,
             }
-
             if is_atomic:
                 payload["material_id"] = mat_dict[mat_name]
+                payload["volume"] = volume
 
             res = requests.post(
                 f"{BACKEND_URL}/components",
@@ -549,9 +728,13 @@ elif page == "Components":
                 if up_atomic and mat_dict
                 else ""
             )
-            up_volume = st.number_input(
-                "Volume",
-                value=comp.get("volume", 0.0) or 0.0,
+            up_volume = (
+                st.number_input(
+                    "Volume",
+                    value=comp.get("volume", 0.0) or 0.0,
+                )
+                if up_atomic
+                else None
             )
             parent_candidates = [
                 c
@@ -674,15 +857,15 @@ elif page == "Components":
                 )
                 up_mv_bonus = mv_bonus_map[
                     st.selectbox(
-                        "Materialverträglichkeit-Bonus",
+                        "Material compatibility bonus",
                         list(mv_bonus_map.keys()),
                         index=mv_bonus_idx,
                     )
                 ]
                 mv_abzug_map = {
-                    "kein Abzug": 0.0,
-                    "unverträglich": -2.0,
-                    "kontaminierend (MV-2 oder MV-3)": -3.0,
+                    "no deduction": 0.0,
+                    "incompatible": -2.0,
+                    "contaminating (MV-2 or MV-3)": -3.0,
                 }
                 mv_abzug_vals = list(mv_abzug_map.values())
                 mv_abzug_idx = (
@@ -692,37 +875,40 @@ elif page == "Components":
                 )
                 up_mv_abzug = mv_abzug_map[
                     st.selectbox(
-                        "Störstoffe/Kontamination – Abzug",
+                        "Contaminants / deduction",
                         list(mv_abzug_map.keys()),
                         index=mv_abzug_idx,
                     )
                 ]
             updated = st.form_submit_button("Update")
+
             if updated:
+                payload = {
+                    "name": up_name,
+                    "project_id": st.session_state.get("project_id"),
+                    "material_id": mat_dict.get(up_mat),
+                    "level": up_level,
+                    "parent_id": parent_map[up_parent],
+                    "is_atomic": up_atomic,
+                    "reusable": up_reusable,
+                    **(
+                        {
+                            "systemability": up_systemability,
+                            "r_factor": up_r_factor,
+                            "trenn_eff": up_trenn_eff,
+                            "sort_eff": up_sort_eff,
+                            "mv_bonus": up_mv_bonus,
+                            "mv_abzug": up_mv_abzug,
+                        }
+                        if "R8" in r_strats
+                        else {},
+                    ),
+                }
+                if up_atomic:
+                    payload["volume"] = up_volume
                 res = requests.put(
                     f"{BACKEND_URL}/components/{comp['id']}",
-                    json={
-                        "name": up_name,
-                        "project_id": st.session_state.get("project_id"),
-                        "material_id": mat_dict.get(up_mat),
-                        "level": up_level,
-                        "parent_id": parent_map[up_parent],
-                        "is_atomic": up_atomic,
-                        "volume": up_volume,
-                        "reusable": up_reusable,
-                        **(
-                            {
-                                "systemability": up_systemability,
-                                "r_factor": up_r_factor,
-                                "trenn_eff": up_trenn_eff,
-                                "sort_eff": up_sort_eff,
-                                "mv_bonus": up_mv_bonus,
-                                "mv_abzug": up_mv_abzug,
-                            }
-                            if "R8" in r_strats
-                            else {}
-                        ),
-                    },
+                    json=payload,
                     headers=AUTH_HEADERS,
                 )
                 if res.ok:
@@ -775,11 +961,11 @@ elif page == "Components":
             if node['children']:
                 display_tree(node['children'], level + 1)
 
-    @st.dialog("Nachhaltigkeitsbewertung berechnen")
+    @st.dialog("Calculate sustainability assessment")
     def sustainability_dialog():
-        st.write("Nachhaltigkeitsbewertung berechnen?")
+        st.write("Calculate sustainability assessment?")
         col1, col2 = st.columns(2)
-        if col1.button("Ja, berechnen"):
+        if col1.button("Yes, calculate"):
             try:
                 res = requests.post(
                     f"{BACKEND_URL}/sustainability/calculate",
@@ -791,7 +977,7 @@ elif page == "Components":
                 st.session_state.sustainability = []
                 st.error(str(e))
             rerun()
-        if col2.button("Abbrechen"):
+        if col2.button("Cancel"):
             rerun()
 
     st.header("Component hierarchy")
@@ -799,7 +985,7 @@ elif page == "Components":
     tree = build_tree(components)
     display_tree(tree)
 
-    if st.button("Fertigstellen"):
+    if st.button("Finish"):
         sustainability_dialog()
 
     if st.session_state.get("sustainability"):
@@ -831,7 +1017,8 @@ elif page == "Components":
                 f"Biogenic: {ev['biogenic_gwp']:.2f}, ADPf: {ev['adpf']:.2f}"
             )
 
-elif page == "Export/Import":
+def render_export_import():
+    require_auth()
     st.header("Export database")
     if st.button("Download CSV"):
         try:
@@ -866,3 +1053,14 @@ elif page == "Export/Import":
             st.success("Import successful")
         except Exception as e:
             st.error(str(e))
+
+
+# ---------- Router ----------
+if page == "Projects":
+    render_projects()
+elif page == "Materials":
+    render_materials()
+elif page == "Components":
+    render_components()
+elif page == "Export/Import":
+    render_export_import()

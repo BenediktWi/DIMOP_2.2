@@ -60,7 +60,11 @@ class Project(Base):
     name = Column(String, unique=True, nullable=False)
     r_strategies = Column(String, nullable=True)
     materials = relationship("Material", back_populates="project")
-    components = relationship("Component", back_populates="project")
+    components = relationship(
+        "Component",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
 
 
 class Material(Base):
@@ -196,6 +200,34 @@ class Compability(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
+
+
+def recalc_component_weight(db: Session, component: Component) -> float:
+    """Recalculate component weight recursively."""
+    if component.is_atomic:
+        density = (
+            component.material.density
+            if component.material and component.material.density
+            else 0.0
+        )
+        volume = component.volume or 0.0
+        component.weight = volume * density
+        db.add(component)
+        return component.weight
+
+    total = 0.0
+    for child in component.children:
+        total += recalc_component_weight(db, child)
+    component.weight = total
+    db.add(component)
+    return total
+
+
+def recalc_ancestors(db: Session, component: Optional[Component]):
+    """Recalculate weights for ``component`` and its ancestors."""
+    while component is not None:
+        recalc_component_weight(db, component)
+        component = component.parent
 
 
 # Pydantic schemas
@@ -488,6 +520,28 @@ def read_projects(
     return db.query(Project).all()
 
 
+@app.delete("/projects/{project_id}", status_code=204)
+def delete_project(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    for material in project.materials:
+        material.project_id = None
+    try:
+        db.delete(project)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409, detail="Project could not be deleted due to constraints"
+        )
+    return Response(status_code=204)
+
+
 # Material routes
 # TODO: use Depends(get_current_user) in each route to require authentication
 @app.post("/materials", response_model=MaterialRead)
@@ -603,9 +657,10 @@ def create_component(
     if not component.is_atomic:
         data["material_id"] = None
     db_component = Component(**data)
-    if material and db_component.volume is not None and material.density is not None:
-        db_component.weight = db_component.volume * material.density
     db.add(db_component)
+    db.commit()
+    db.refresh(db_component)
+    recalc_ancestors(db, db_component)
     db.commit()
     db.refresh(db_component)
     return db_component
@@ -668,11 +723,10 @@ def update_component(
         )
     if not component.is_atomic:
         component.material_id = None
-    material = db.get(Material, component.material_id)
-    if component.volume is not None and material and material.density is not None:
-        component.weight = component.volume * material.density
-    else:
-        component.weight = None
+        component.volume = None
+    db.commit()
+    db.refresh(component)
+    recalc_ancestors(db, component)
     db.commit()
     db.refresh(component)
     return component
@@ -688,8 +742,13 @@ def delete_component(
     component = db.get(Component, component_id)
     if not component or component.project_id != project_id:
         raise HTTPException(status_code=404, detail="Component not found")
+    parent = component.parent
     db.delete(component)
     db.commit()
+    if parent is not None:
+        db.refresh(parent)
+        recalc_ancestors(db, parent)
+        db.commit()
     return {"ok": True}
 
 
