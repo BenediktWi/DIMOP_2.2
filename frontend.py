@@ -209,7 +209,8 @@ def render_projects():
                         -webkit-box-orient:vertical;
                         font-weight:600;
                         font-size:1.1rem;
-                        line-height:1.2;">{proj['name']}</div>
+                        line-height:1.2;
+                        margin-bottom:2px;">{proj['name']}</div>
                     """,
                     unsafe_allow_html=True,
                 )
@@ -221,14 +222,15 @@ def render_projects():
                     for lbl in labels
                 )
                 st.markdown(
-                    f"<div style='height:24px'>{tags_html}</div>",
+
+                    f"<div style='height:72px;margin:2px 0 6px 0;overflow:hidden'>{tags_html}</div>",
                     unsafe_allow_html=True,
                 )
                 if st.button("Select", key=f"proj_select_{proj['id']}", use_container_width=True):
                     st.session_state["project_id"] = proj["id"]
                     st.session_state["r_strategies"] = proj.get("r_strategies") or []
                     navigate("Components")  # jump to Components when selecting a Project
-                st.write("")
+                st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
                 if st.button(
                     "Delete", key=f"proj_delete_{proj['id']}", use_container_width=True
                 ):
