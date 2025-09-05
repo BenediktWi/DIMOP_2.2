@@ -222,6 +222,7 @@ def render_projects():
                     for lbl in labels
                 )
                 st.markdown(
+
                     f"<div style='height:72px;margin:2px 0 6px 0;overflow:hidden'>{tags_html}</div>",
                     unsafe_allow_html=True,
                 )
