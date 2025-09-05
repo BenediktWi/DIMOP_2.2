@@ -272,17 +272,18 @@ st.title("DIMOP 2.2")
 
 # ---------- Sidebar: Page select (no warning, no direct state writes) ----------
 page_options = ["Projects", "Materials", "Components", "Export/Import"]
-pending_nav = st.session_state.pop("_nav_to", None)
+pending = st.session_state.pop("_nav_to", None)
+current = st.session_state.get("page_select", "Projects")
+if pending and pending in page_options:
+    current = pending
+    st.session_state["page_select"] = current
 
-if pending_nav and pending_nav in page_options:
-    # Programmatic navigation this run: set default index via widget (no direct session write)
-    st.sidebar.selectbox("Page", page_options, index=page_options.index(pending_nav), key="page_select")
-elif "page_select" in st.session_state:
-    # Let existing widget value stand; don't pass index explicitly to avoid warning
-    st.sidebar.selectbox("Page", page_options, key="page_select")
-else:
-    # First run: default to Projects
-    st.sidebar.selectbox("Page", page_options, index=page_options.index("Projects"), key="page_select")
+page = st.sidebar.selectbox(
+    "Page",
+    page_options,
+    index=page_options.index(current),
+    key="page_select",
+)
 
 st.sidebar.divider()
 
@@ -1038,7 +1039,6 @@ def render_export_import():
 
 
 # ---------- Router ----------
-page = st.session_state.get("page_select", "Projects")
 if page == "Projects":
     render_projects()
 elif page == "Materials":
