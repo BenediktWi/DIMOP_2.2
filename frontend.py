@@ -213,6 +213,17 @@ def render_projects():
                     """,
                     unsafe_allow_html=True,
                 )
+                codes = proj.get("r_strategies") or []
+                labels = [LABELS.get(c, c) for c in codes]
+                tags_html = " ".join(
+                    f"<span style='padding:2px 6px;border:1px solid #ccc;"
+                    f"border-radius:8px;font-size:12px;margin-right:4px'>{lbl}</span>"
+                    for lbl in labels
+                )
+                st.markdown(
+                    f"<div style='height:24px'>{tags_html}</div>",
+                    unsafe_allow_html=True,
+                )
                 if st.button("Select", key=f"proj_select_{proj['id']}", use_container_width=True):
                     st.session_state["project_id"] = proj["id"]
                     st.session_state["r_strategies"] = proj.get("r_strategies") or []
@@ -247,8 +258,12 @@ def render_projects():
         });
         </script>
         <style>
-        .btn-select:hover { background-color: #00B050 !important; }
-        .btn-delete:hover { background-color: #FF0000 !important; }
+        .btn-select:hover,
+        .btn-select:active,
+        .btn-select:focus { background-color: #00B050 !important; }
+        .btn-delete:hover,
+        .btn-delete:active,
+        .btn-delete:focus { background-color: #FF0000 !important; }
         .btn-create:hover { filter: brightness(1.05); }
         </style>
         """,
