@@ -171,6 +171,96 @@ def render_projects():
         if c2.button("Cancel"):
             st.rerun()
 
+    @st.dialog("Edit Project")
+    def edit_project_dialog(project):
+        new_name = st.text_input("Project name", value=project["name"])
+        r_opts = {
+            "Refuse (R0)": "R0",
+            "Rethink (R1)": "R1",
+            "Reduce (R2)": "R2",
+            "Reuse (R3)": "R3",
+            "Repair (R4)": "R4",
+            "Refurbish (R5)": "R5",
+            "Remanufacture (R6)": "R6",
+            "Repurpose (R7)": "R7",
+            "Recycle (R8)": "R8",
+            "Recover (R9)": "R9",
+        }
+        selected_strats = []
+        current = project.get("r_strategies") or []
+        for label, code in r_opts.items():
+            if st.checkbox(
+                label,
+                key=f"dlg_edit_{code}_{project['id']}",
+                value=code in current,
+            ):
+                selected_strats.append(code)
+        c1, c2 = st.columns(2)
+        if c1.button("Change"):
+            if not new_name:
+                st.error("Please enter a name")
+            else:
+                try:
+                    res = requests.put(
+                        f"{BACKEND_URL}/projects/{project['id']}",
+                        json={"name": new_name, "r_strategies": selected_strats},
+                        headers=AUTH_HEADERS,
+                    )
+                    res.raise_for_status()
+                    st.success("Project updated")
+                    st.rerun()
+                except Exception as e:
+                    st.error(str(e))
+        if c2.button("Cancel"):
+            st.rerun()
+
+    @st.dialog("Copy Project")
+    def copy_project_dialog():
+        if not tiles:
+            st.write("No projects to copy")
+            if st.button("Cancel"):
+                st.rerun()
+            return
+        proj_map = {f"{p['name']} (id:{p['id']})": p for p in tiles}
+        selected = st.selectbox("Project to copy", list(proj_map.keys()))
+        source_id = proj_map[selected]["id"]
+        new_name = st.text_input("Project name")
+        r_opts = {
+            "Refuse (R0)": "R0",
+            "Rethink (R1)": "R1",
+            "Reduce (R2)": "R2",
+            "Reuse (R3)": "R3",
+            "Repair (R4)": "R4",
+            "Refurbish (R5)": "R5",
+            "Remanufacture (R6)": "R6",
+            "Repurpose (R7)": "R7",
+            "Recycle (R8)": "R8",
+            "Recover (R9)": "R9",
+        }
+        selected_strats = [
+            code
+            for label, code in r_opts.items()
+            if st.checkbox(label, key=f"dlg_copy_{code}")
+        ]
+        c1, c2 = st.columns(2)
+        if c1.button("Copy"):
+            if not new_name:
+                st.error("Please enter a name")
+            else:
+                try:
+                    res = requests.post(
+                        f"{BACKEND_URL}/projects/{source_id}/copy",
+                        json={"name": new_name, "r_strategies": selected_strats},
+                        headers=AUTH_HEADERS,
+                    )
+                    res.raise_for_status()
+                    st.success("Project copied")
+                    st.rerun()
+                except Exception as e:
+                    st.error(str(e))
+        if c2.button("Cancel"):
+            st.rerun()
+
     @st.dialog("Delete Project")
     def confirm_delete_dialog(project_id, project_name):
         st.write(
@@ -232,6 +322,11 @@ def render_projects():
                     navigate("Components")  # jump to Components when selecting a Project
                 st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
                 if st.button(
+                    "Edit", key=f"proj_edit_{proj['id']}", use_container_width=True
+                ):
+                    edit_project_dialog(proj)
+                st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+                if st.button(
                     "Delete", key=f"proj_delete_{proj['id']}", use_container_width=True
                 ):
                     confirm_delete_dialog(proj["id"], proj["name"])
@@ -246,6 +341,13 @@ def render_projects():
                 key="create_project_main",
             ):
                 create_project_dialog()
+            st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+            if st.button(
+                "Copy Project",
+                use_container_width=True,
+                key="copy_project_main",
+            ):
+                copy_project_dialog()
 
     from streamlit.components.v1 import html
     html(
@@ -257,6 +359,8 @@ def render_projects():
             if (txt === 'Select') btn.classList.add('btn-select');
             else if (txt === 'Delete') btn.classList.add('btn-delete');
             else if (txt === '➕ Create Project') btn.classList.add('btn-create');
+            else if (txt === 'Edit') btn.classList.add('btn-edit');
+            else if (txt === 'Copy Project') btn.classList.add('btn-copy');
         });
         </script>
         <style>
@@ -267,6 +371,10 @@ def render_projects():
         .btn-delete:active,
         .btn-delete:focus { background-color: #FF0000 !important; }
         .btn-create:hover { filter: brightness(1.05); }
+        .btn-edit:hover,
+        .btn-edit:active,
+        .btn-edit:focus { background-color: #007bff !important; }
+        .btn-copy:hover { filter: brightness(1.05); }
         </style>
         """,
         height=0,
